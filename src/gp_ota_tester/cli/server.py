@@ -40,6 +40,56 @@ logger = logging.getLogger(__name__)
 # Global server instance for signal handling
 _server_instance: Optional[AdminServer] = None
 
+# Default PID file location
+DEFAULT_PID_FILE = Path("/tmp/gp-ota-server.pid")
+
+
+def _get_pid_file() -> Path:
+    """Get the PID file path from environment or default."""
+    return Path(os.environ.get("GP_OTA_SERVER_PID_FILE", str(DEFAULT_PID_FILE)))
+
+
+def _write_pid_file(pid: int) -> None:
+    """Write PID to file."""
+    pid_file = _get_pid_file()
+    try:
+        pid_file.write_text(str(pid))
+        logger.debug(f"Wrote PID {pid} to {pid_file}")
+    except IOError as e:
+        logger.warning(f"Failed to write PID file: {e}")
+
+
+def _read_pid_file() -> Optional[int]:
+    """Read PID from file."""
+    pid_file = _get_pid_file()
+    try:
+        if pid_file.exists():
+            pid_str = pid_file.read_text().strip()
+            return int(pid_str)
+    except (IOError, ValueError) as e:
+        logger.debug(f"Failed to read PID file: {e}")
+    return None
+
+
+def _remove_pid_file() -> None:
+    """Remove PID file."""
+    pid_file = _get_pid_file()
+    try:
+        if pid_file.exists():
+            pid_file.unlink()
+            logger.debug(f"Removed PID file {pid_file}")
+    except IOError as e:
+        logger.warning(f"Failed to remove PID file: {e}")
+
+
+def _is_process_running(pid: int) -> bool:
+    """Check if a process with the given PID is running."""
+    try:
+        os.kill(pid, 0)
+        return True
+    except OSError:
+        return False
+
 
 # =============================================================================
 # CLI Group
@@ -257,33 +307,55 @@ def start(
         click.echo("\nReceived shutdown signal, stopping server...")
         if _server_instance:
             _server_instance.stop()
+        _remove_pid_file()
         sys.exit(0)
 
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
+
+    # Check if server is already running
+    existing_pid = _read_pid_file()
+    if existing_pid and _is_process_running(existing_pid):
+        click.echo(
+            click.style(
+                f"Server is already running (PID: {existing_pid}). "
+                "Use 'gp-server stop' to stop it first.",
+                fg="red",
+            ),
+            err=True,
+        )
+        sys.exit(1)
 
     # Start server
     try:
         click.echo(f"Starting PSK-TLS Admin Server on {host}:{port}...")
         server.start()
 
+        # Write PID file
+        _write_pid_file(os.getpid())
+
         click.echo(click.style(
             f"Server started successfully on {host}:{port}",
             fg="green",
         ))
+        click.echo(f"PID: {os.getpid()}")
 
         if foreground:
             click.echo("Press Ctrl+C to stop the server")
 
             # Keep running until interrupted
-            while server.is_running:
-                time.sleep(1)
+            try:
+                while server.is_running:
+                    time.sleep(1)
+            finally:
+                _remove_pid_file()
         else:
             click.echo(
-                f"Server running in background. Use 'gp-ota-server stop' to stop."
+                f"Server running in background. Use 'gp-server stop' to stop."
             )
 
     except Exception as e:
+        _remove_pid_file()
         click.echo(click.style(f"Failed to start server: {e}", fg="red"), err=True)
         sys.exit(1)
 
@@ -303,7 +375,7 @@ def start(
 @click.option(
     "--force",
     is_flag=True,
-    help="Force immediate shutdown without waiting",
+    help="Force immediate shutdown (SIGKILL instead of SIGTERM)",
 )
 @click.pass_context
 def stop(ctx: click.Context, timeout: float, force: bool) -> None:
@@ -315,37 +387,102 @@ def stop(ctx: click.Context, timeout: float, force: bool) -> None:
     Examples:
 
         # Stop with default timeout
-        gp-ota-server stop
+        gp-server stop
 
         # Force immediate shutdown
-        gp-ota-server stop --force
+        gp-server stop --force
 
         # Stop with custom timeout
-        gp-ota-server stop --timeout 10
+        gp-server stop --timeout 10
     """
     global _server_instance
 
-    if _server_instance is None:
-        click.echo(
-            click.style("No server instance found to stop", fg="yellow")
-        )
-        # Try to find PID file or other mechanism
-        click.echo("Note: Server may be running in a different process")
+    # First, try to use the in-process server instance
+    if _server_instance is not None:
+        click.echo("Stopping server (in-process)...")
+        try:
+            _server_instance.stop(timeout=timeout)
+            _remove_pid_file()
+            click.echo(click.style("Server stopped successfully", fg="green"))
+        except Exception as e:
+            click.echo(click.style(f"Error stopping server: {e}", fg="red"), err=True)
+            sys.exit(1)
+        _server_instance = None
         return
 
-    click.echo("Stopping server...")
+    # Otherwise, try to find and signal the server via PID file
+    pid = _read_pid_file()
+    if pid is None:
+        click.echo(click.style("No server found (no PID file)", fg="yellow"))
+        click.echo(f"PID file location: {_get_pid_file()}")
+        return
 
-    if force:
-        timeout = 0.1
+    if not _is_process_running(pid):
+        click.echo(
+            click.style(
+                f"Server not running (stale PID file, PID: {pid})",
+                fg="yellow",
+            )
+        )
+        _remove_pid_file()
+        return
 
+    click.echo(f"Stopping server (PID: {pid})...")
+
+    # Send appropriate signal
     try:
-        _server_instance.stop(timeout=timeout)
+        if force:
+            click.echo("Sending SIGKILL...")
+            os.kill(pid, signal.SIGKILL)
+        else:
+            click.echo("Sending SIGTERM...")
+            os.kill(pid, signal.SIGTERM)
+
+        # Wait for process to terminate
+        waited = 0.0
+        interval = 0.1
+        while waited < timeout and _is_process_running(pid):
+            time.sleep(interval)
+            waited += interval
+
+        if _is_process_running(pid):
+            if not force:
+                click.echo(
+                    click.style(
+                        f"Server did not stop within {timeout}s. "
+                        "Use --force to send SIGKILL.",
+                        fg="yellow",
+                    )
+                )
+                sys.exit(1)
+            else:
+                click.echo(
+                    click.style(
+                        f"Server did not stop after SIGKILL (PID: {pid})",
+                        fg="red",
+                    ),
+                    err=True,
+                )
+                sys.exit(1)
+
+        _remove_pid_file()
         click.echo(click.style("Server stopped successfully", fg="green"))
+
+    except ProcessLookupError:
+        click.echo(click.style("Server already stopped", fg="yellow"))
+        _remove_pid_file()
+    except PermissionError:
+        click.echo(
+            click.style(
+                f"Permission denied to stop server (PID: {pid}). Try with sudo.",
+                fg="red",
+            ),
+            err=True,
+        )
+        sys.exit(1)
     except Exception as e:
         click.echo(click.style(f"Error stopping server: {e}", fg="red"), err=True)
         sys.exit(1)
-
-    _server_instance = None
 
 
 # =============================================================================
@@ -360,35 +497,53 @@ def status(ctx: click.Context) -> None:
 
     Displays information about the running server including:
     - Running state
-    - Active connections
-    - Session count
+    - PID
+    - Active connections (if in-process)
+    - Session count (if in-process)
     """
     global _server_instance
 
-    if _server_instance is None:
-        click.echo(click.style("Server is not running", fg="yellow"))
+    # First check in-process server
+    if _server_instance is not None and _server_instance.is_running:
+        click.echo(click.style("Server Status:", fg="green", bold=True))
+        click.echo(f"  Running: True (in-process)")
+        click.echo(f"  PID: {os.getpid()}")
+        click.echo(f"  Host: {_server_instance.config.host}")
+        click.echo(f"  Port: {_server_instance.config.port}")
+        click.echo(f"  Active Connections: {_server_instance.get_connection_count()}")
+        click.echo(f"  Active Sessions: {_server_instance.get_session_count()}")
+
+        # Show sessions
+        sessions = _server_instance.get_active_sessions()
+        if sessions:
+            click.echo("\n  Active Sessions:")
+            for session in sessions:
+                click.echo(
+                    f"    - {session.session_id[:8]}... "
+                    f"({session.client_address}, state={session.state.value})"
+                )
         return
 
-    if not _server_instance.is_running:
-        click.echo(click.style("Server is stopped", fg="yellow"))
+    # Check via PID file
+    pid = _read_pid_file()
+    if pid is None:
+        click.echo(click.style("Server is not running", fg="yellow"))
+        click.echo(f"PID file: {_get_pid_file()} (not found)")
+        return
+
+    if not _is_process_running(pid):
+        click.echo(click.style("Server is not running (stale PID file)", fg="yellow"))
+        click.echo(f"PID file: {_get_pid_file()} (PID: {pid}, not running)")
+        _remove_pid_file()
         return
 
     click.echo(click.style("Server Status:", fg="green", bold=True))
-    click.echo(f"  Running: {_server_instance.is_running}")
-    click.echo(f"  Host: {_server_instance.config.host}")
-    click.echo(f"  Port: {_server_instance.config.port}")
-    click.echo(f"  Active Connections: {_server_instance.get_connection_count()}")
-    click.echo(f"  Active Sessions: {_server_instance.get_session_count()}")
-
-    # Show sessions
-    sessions = _server_instance.get_active_sessions()
-    if sessions:
-        click.echo("\n  Active Sessions:")
-        for session in sessions:
-            click.echo(
-                f"    - {session.session_id[:8]}... "
-                f"({session.client_address}, state={session.state.value})"
-            )
+    click.echo(f"  Running: True")
+    click.echo(f"  PID: {pid}")
+    click.echo(f"  PID file: {_get_pid_file()}")
+    click.echo("")
+    click.echo("  Note: Detailed stats available only from the same process.")
+    click.echo("  Use 'gp-server stop' to stop the server.")
 
 
 # =============================================================================
