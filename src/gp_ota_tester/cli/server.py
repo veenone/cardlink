@@ -187,6 +187,12 @@ def cli(ctx: click.Context, verbose: bool, debug: bool) -> None:
     help="Session timeout in seconds (default: 300)",
 )
 @click.option(
+    "--handshake-timeout",
+    default=30.0,
+    type=float,
+    help="TLS handshake timeout in seconds (default: 30)",
+)
+@click.option(
     "--dashboard",
     is_flag=True,
     help="Enable web dashboard (requires dashboard module)",
@@ -207,6 +213,7 @@ def start(
     enable_null_ciphers: bool,
     max_connections: int,
     session_timeout: float,
+    handshake_timeout: float,
     dashboard: bool,
     foreground: bool,
 ) -> None:
@@ -253,6 +260,7 @@ def start(
             enable_null_ciphers=enable_null_ciphers,
             max_connections=max_connections,
             session_timeout=session_timeout,
+            handshake_timeout=handshake_timeout,
             keys_path=keys,
         )
     except ConfigurationError as e:
@@ -565,6 +573,7 @@ def load_configuration(
     enable_null_ciphers: bool,
     max_connections: int,
     session_timeout: float,
+    handshake_timeout: float,
     keys_path: Optional[Path],
 ) -> tuple[ServerConfig, Optional[Path]]:
     """Load and merge configuration from file and CLI options.
@@ -577,6 +586,7 @@ def load_configuration(
         enable_null_ciphers: NULL cipher flag from CLI.
         max_connections: Max connections from CLI.
         session_timeout: Session timeout from CLI.
+        handshake_timeout: TLS handshake timeout from CLI.
         keys_path: Keys file path from CLI.
 
     Returns:
@@ -616,6 +626,7 @@ def load_configuration(
     config_dict["port"] = port
     config_dict["max_connections"] = max_connections
     config_dict["session_timeout"] = session_timeout
+    config_dict["handshake_timeout"] = handshake_timeout
 
     # Create cipher config
     cipher_config = CipherConfig(
@@ -650,6 +661,74 @@ def load_configuration(
         raise ConfigurationError(str(e))
 
     return server_config, final_keys_path
+
+
+# =============================================================================
+# Validate Command
+# =============================================================================
+
+
+@cli.command()
+@click.option(
+    "--config", "-c",
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    required=True,
+    help="Path to YAML configuration file to validate",
+)
+@click.option(
+    "--keys", "-k",
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    help="Path to PSK keys YAML file to validate",
+)
+@click.pass_context
+def validate(ctx: click.Context, config: Path, keys: Optional[Path]) -> None:
+    """Validate configuration file without starting server.
+
+    Checks configuration file syntax and validates all settings.
+
+    Examples:
+
+        # Validate config file
+        gp-server validate --config server.yaml
+
+        # Validate config and keys
+        gp-server validate --config server.yaml --keys keys.yaml
+    """
+    click.echo(f"Validating configuration: {config}")
+
+    try:
+        server_config, key_store_path = load_configuration(
+            config_path=config,
+            host="127.0.0.1",  # Default, will be overridden by config
+            port=8443,
+            ciphers="production",
+            enable_null_ciphers=False,
+            max_connections=10,
+            session_timeout=300.0,
+            handshake_timeout=30.0,
+            keys_path=keys,
+        )
+        click.echo(click.style("Configuration valid!", fg="green"))
+        click.echo(f"  Host: {server_config.host}")
+        click.echo(f"  Port: {server_config.port}")
+        click.echo(f"  Max connections: {server_config.max_connections}")
+        click.echo(f"  Session timeout: {server_config.session_timeout}s")
+        click.echo(f"  Handshake timeout: {server_config.handshake_timeout}s")
+
+        if key_store_path:
+            click.echo(f"\nValidating key store: {key_store_path}")
+            try:
+                key_store = FileKeyStore(str(key_store_path))
+                identities = key_store.get_all_identities()
+                click.echo(click.style("Key store valid!", fg="green"))
+                click.echo(f"  Loaded {len(identities)} PSK identities")
+            except Exception as e:
+                click.echo(click.style(f"Key store error: {e}", fg="red"), err=True)
+                sys.exit(1)
+
+    except ConfigurationError as e:
+        click.echo(click.style(f"Configuration error: {e}", fg="red"), err=True)
+        sys.exit(1)
 
 
 # =============================================================================
