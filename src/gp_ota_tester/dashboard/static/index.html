@@ -1,0 +1,548 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="GP OTA Tester Dashboard - Monitor and control GlobalPlatform OTA test sessions">
+  <title>GP OTA Tester Dashboard</title>
+
+  <!-- Favicon -->
+  <link rel="icon" type="image/svg+xml" href="/static/images/favicon.svg">
+
+  <!-- Stylesheets -->
+  <link rel="stylesheet" href="/static/css/tokens.css">
+  <link rel="stylesheet" href="/static/css/base.css">
+  <link rel="stylesheet" href="/static/css/components.css">
+  <link rel="stylesheet" href="/static/css/utilities.css">
+
+  <!-- Preconnect for WebSocket -->
+  <link rel="preconnect" href="ws://localhost:8080">
+</head>
+<body>
+  <div id="app" class="app">
+    <!-- Header -->
+    <header class="app__header header" role="banner">
+      <div class="header__brand">
+        <svg class="header__logo" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+          <rect width="32" height="32" rx="6" fill="var(--color-primary-600)"/>
+          <path d="M8 12h16M8 16h12M8 20h8" stroke="white" stroke-width="2" stroke-linecap="round"/>
+        </svg>
+        <h1 class="header__title">GP OTA Tester</h1>
+      </div>
+
+      <nav class="header__nav" aria-label="Main navigation">
+        <div id="connection-status" class="header__status header__status--disconnected">
+          <span class="header__status-indicator" aria-hidden="true"></span>
+          <span class="header__status-text">Disconnected</span>
+        </div>
+
+        <button
+          id="settings-btn"
+          class="btn btn--ghost btn--icon"
+          type="button"
+          aria-label="Settings"
+          title="Settings"
+        >
+          <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5">
+            <path d="M10 13a3 3 0 100-6 3 3 0 000 6z"/>
+            <path d="M17.1 12.9l-1.2-.7a5.9 5.9 0 000-2.4l1.2-.7a.5.5 0 00.2-.6l-.9-1.6a.5.5 0 00-.6-.2l-1.2.7a6 6 0 00-2.1-1.2V5a.5.5 0 00-.5-.5h-2a.5.5 0 00-.5.5v1.2a6 6 0 00-2.1 1.2l-1.2-.7a.5.5 0 00-.6.2L4 7.5a.5.5 0 00.2.6l1.2.7a5.9 5.9 0 000 2.4l-1.2.7a.5.5 0 00-.2.6l.9 1.6a.5.5 0 00.6.2l1.2-.7a6 6 0 002.1 1.2V16a.5.5 0 00.5.5h2a.5.5 0 00.5-.5v-1.2a6 6 0 002.1-1.2l1.2.7a.5.5 0 00.6-.2l.9-1.6a.5.5 0 00-.5-.6z"/>
+          </svg>
+        </button>
+
+        <button
+          id="theme-toggle"
+          class="btn btn--ghost btn--icon"
+          type="button"
+          aria-label="Toggle dark mode"
+          title="Toggle dark mode"
+        >
+          <svg class="theme-icon theme-icon--light" width="20" height="20" viewBox="0 0 20 20" fill="currentColor">
+            <path d="M10 2a1 1 0 011 1v1a1 1 0 11-2 0V3a1 1 0 011-1zM4.222 4.222a1 1 0 011.414 0l.707.707a1 1 0 11-1.414 1.414l-.707-.707a1 1 0 010-1.414zM15.778 4.222a1 1 0 010 1.414l-.707.707a1 1 0 11-1.414-1.414l.707-.707a1 1 0 011.414 0zM10 7a3 3 0 100 6 3 3 0 000-6zM2 10a1 1 0 011-1h1a1 1 0 110 2H3a1 1 0 01-1-1zM15 10a1 1 0 011-1h1a1 1 0 110 2h-1a1 1 0 01-1-1zM5.636 13.657a1 1 0 011.414 0l.707.707a1 1 0 11-1.414 1.414l-.707-.707a1 1 0 010-1.414zM14.364 13.657a1 1 0 010 1.414l-.707.707a1 1 0 11-1.414-1.414l.707-.707a1 1 0 011.414 0zM10 15a1 1 0 011 1v1a1 1 0 11-2 0v-1a1 1 0 011-1z"/>
+          </svg>
+          <svg class="theme-icon theme-icon--dark hidden" width="20" height="20" viewBox="0 0 20 20" fill="currentColor">
+            <path d="M17.293 13.293A8 8 0 016.707 2.707a8.001 8.001 0 1010.586 10.586z"/>
+          </svg>
+        </button>
+      </nav>
+    </header>
+
+    <!-- Main Content -->
+    <main class="app__main" role="main">
+      <!-- Sidebar: Session Panel -->
+      <aside class="app__sidebar" aria-label="Sessions">
+        <div class="session-panel">
+          <div class="session-panel__header">
+            <h2 class="session-panel__title">Sessions</h2>
+            <button
+              id="refresh-sessions"
+              class="btn btn--ghost btn--icon btn--sm"
+              type="button"
+              aria-label="Refresh sessions"
+              title="Refresh sessions"
+            >
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+                <path d="M14 8a6 6 0 11-1.5-4M14 2v4h-4"/>
+              </svg>
+            </button>
+          </div>
+
+          <div id="session-list" class="session-panel__list" role="listbox" aria-label="Session list">
+            <!-- Sessions will be populated here -->
+            <div class="session-panel__empty">
+              <svg class="session-panel__empty-icon" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="1.5">
+                <rect x="6" y="8" width="36" height="32" rx="4"/>
+                <path d="M14 20h20M14 28h12"/>
+              </svg>
+              <p class="text-sm">No active sessions</p>
+              <p class="text-xs mt-1">Start a test session to see APDU logs</p>
+            </div>
+          </div>
+        </div>
+      </aside>
+
+      <!-- Content Area -->
+      <div class="app__content">
+        <!-- Alert Banner Container -->
+        <div id="alert-container" class="px-4 pt-4" role="alert" aria-live="polite">
+          <!-- Alerts will be inserted here -->
+        </div>
+
+        <!-- APDU Log -->
+        <section class="apdu-log flex-1">
+          <div class="apdu-log__toolbar">
+            <div class="apdu-log__search">
+              <input
+                id="search-input"
+                type="search"
+                class="w-full"
+                placeholder="Search APDUs... (Ctrl+F)"
+                aria-label="Search APDU logs"
+              >
+            </div>
+
+            <div class="apdu-log__filter">
+              <select id="filter-direction" class="text-sm" aria-label="Filter by direction">
+                <option value="all">All</option>
+                <option value="command">Commands</option>
+                <option value="response">Responses</option>
+              </select>
+
+              <select id="filter-status" class="text-sm" aria-label="Filter by status">
+                <option value="all">All Status</option>
+                <option value="success">Success (90XX)</option>
+                <option value="warning">Warning (6XXX)</option>
+                <option value="error">Error</option>
+              </select>
+            </div>
+
+            <div class="apdu-log__actions">
+              <span id="apdu-count" class="text-sm text-secondary">0 entries</span>
+
+              <button
+                id="export-btn"
+                class="btn btn--secondary btn--sm"
+                type="button"
+                aria-label="Export logs"
+              >
+                <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5">
+                  <path d="M7 1v8M3 5l4 4 4-4M2 13h10"/>
+                </svg>
+                Export
+              </button>
+
+              <button
+                id="clear-btn"
+                class="btn btn--ghost btn--sm"
+                type="button"
+                aria-label="Clear logs"
+              >
+                Clear
+              </button>
+
+              <button
+                id="auto-scroll-btn"
+                class="btn btn--ghost btn--icon btn--sm"
+                type="button"
+                aria-label="Toggle auto-scroll"
+                aria-pressed="true"
+                title="Auto-scroll enabled"
+              >
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+                  <path d="M8 3v10M4 9l4 4 4-4"/>
+                </svg>
+              </button>
+            </div>
+          </div>
+
+          <div class="apdu-log__container">
+            <!-- State container for loading/empty/error states -->
+            <div id="apdu-state" class="apdu-log__state hidden">
+              <!-- States will be rendered here by JS -->
+            </div>
+
+            <div id="apdu-viewport" class="apdu-log__viewport" role="log" aria-label="APDU log entries" tabindex="0">
+              <div id="apdu-content" class="apdu-log__content">
+                <!-- APDU entries will be rendered here by virtual scroller -->
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- Command Builder -->
+        <section class="command-builder" aria-labelledby="command-builder-title">
+          <div class="command-builder__header" role="button" tabindex="0" aria-expanded="true" aria-controls="command-builder-body">
+            <h3 id="command-builder-title" class="command-builder__title">
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+                <path d="M4 6l4 4 4-4"/>
+              </svg>
+              Command Builder
+            </h3>
+            <svg class="command-builder__toggle" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+              <path d="M4 6l4 4 4-4"/>
+            </svg>
+          </div>
+
+          <div id="command-builder-body" class="command-builder__body">
+            <form id="command-form" class="command-builder__form">
+              <div class="command-builder__row">
+                <div class="command-builder__field">
+                  <label class="command-builder__label" for="cmd-cla">
+                    CLA
+                    <span class="help-icon" data-tooltip="Class byte - Identifies the command type. 00=ISO, 80/84=GlobalPlatform" tabindex="0" aria-label="Help for CLA">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+                      </svg>
+                    </span>
+                  </label>
+                  <input
+                    id="cmd-cla"
+                    type="text"
+                    class="command-builder__input"
+                    maxlength="2"
+                    pattern="[0-9A-Fa-f]{2}"
+                    placeholder="00"
+                    required
+                  >
+                </div>
+
+                <div class="command-builder__field">
+                  <label class="command-builder__label" for="cmd-ins">
+                    INS
+                    <span class="help-icon" data-tooltip="Instruction byte - The command to execute. A4=SELECT, CA=GET DATA, F2=GET STATUS" tabindex="0" aria-label="Help for INS">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+                      </svg>
+                    </span>
+                  </label>
+                  <input
+                    id="cmd-ins"
+                    type="text"
+                    class="command-builder__input"
+                    maxlength="2"
+                    pattern="[0-9A-Fa-f]{2}"
+                    placeholder="00"
+                    required
+                  >
+                </div>
+
+                <div class="command-builder__field">
+                  <label class="command-builder__label" for="cmd-p1">
+                    P1
+                    <span class="help-icon" data-tooltip="Parameter 1 - First command parameter. Meaning varies by instruction." tabindex="0" aria-label="Help for P1">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+                      </svg>
+                    </span>
+                  </label>
+                  <input
+                    id="cmd-p1"
+                    type="text"
+                    class="command-builder__input"
+                    maxlength="2"
+                    pattern="[0-9A-Fa-f]{2}"
+                    placeholder="00"
+                    required
+                  >
+                </div>
+
+                <div class="command-builder__field">
+                  <label class="command-builder__label" for="cmd-p2">
+                    P2
+                    <span class="help-icon" data-tooltip="Parameter 2 - Second command parameter. Meaning varies by instruction." tabindex="0" aria-label="Help for P2">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+                      </svg>
+                    </span>
+                  </label>
+                  <input
+                    id="cmd-p2"
+                    type="text"
+                    class="command-builder__input"
+                    maxlength="2"
+                    pattern="[0-9A-Fa-f]{2}"
+                    placeholder="00"
+                    required
+                  >
+                </div>
+
+                <div class="command-builder__field">
+                  <label class="command-builder__label" for="cmd-le">
+                    Le
+                    <span class="help-icon" data-tooltip="Length expected - Max response bytes. 00 = up to 256 bytes." tabindex="0" aria-label="Help for Le">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+                      </svg>
+                    </span>
+                  </label>
+                  <input
+                    id="cmd-le"
+                    type="text"
+                    class="command-builder__input"
+                    maxlength="2"
+                    pattern="[0-9A-Fa-f]{0,2}"
+                    placeholder="00"
+                  >
+                </div>
+              </div>
+
+              <div class="command-builder__field">
+                <label class="command-builder__label" for="cmd-data">
+                  Data (hex)
+                  <span class="help-icon" data-tooltip="Command data - Hex bytes to send (e.g., AID for SELECT command)" tabindex="0" aria-label="Help for Data">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+                    </svg>
+                  </span>
+                </label>
+                <input
+                  id="cmd-data"
+                  type="text"
+                  class="command-builder__input command-builder__input--wide"
+                  pattern="[0-9A-Fa-f]*"
+                  placeholder="Optional data bytes"
+                >
+              </div>
+
+              <div class="command-builder__preview">
+                <span class="text-xs text-secondary">Preview: </span>
+                <span id="cmd-preview" class="text-primary">00 00 00 00 00</span>
+              </div>
+
+              <div class="command-builder__actions">
+                <div class="command-builder__templates">
+                  <button type="button" class="btn btn--secondary btn--sm" data-template="select">
+                    SELECT
+                  </button>
+                  <button type="button" class="btn btn--secondary btn--sm" data-template="get-status">
+                    GET STATUS
+                  </button>
+                  <button type="button" class="btn btn--secondary btn--sm" data-template="get-data">
+                    GET DATA
+                  </button>
+                </div>
+
+                <div class="flex gap-2">
+                  <button type="reset" class="btn btn--ghost btn--sm">
+                    Clear
+                  </button>
+                  <button type="submit" class="btn btn--primary btn--sm">
+                    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5">
+                      <path d="M2 7h10M8 3l4 4-4 4"/>
+                    </svg>
+                    Send
+                  </button>
+                </div>
+              </div>
+            </form>
+          </div>
+        </section>
+      </div>
+    </main>
+
+    <!-- Toast Container -->
+    <div id="toast-container" class="toast-container" role="status" aria-live="polite">
+      <!-- Toasts will be inserted here -->
+    </div>
+
+    <!-- Settings Modal -->
+    <div id="settings-modal" class="hidden" role="dialog" aria-labelledby="settings-title" aria-modal="true">
+      <div class="modal-backdrop" data-close-modal></div>
+      <div class="modal">
+        <div class="modal__header">
+          <h2 id="settings-title" class="modal__title">Settings</h2>
+          <button class="modal__close btn btn--ghost btn--icon" type="button" aria-label="Close settings" data-close-modal>
+            <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5">
+              <path d="M5 5l10 10M15 5L5 15"/>
+            </svg>
+          </button>
+        </div>
+
+        <div class="modal__body">
+          <form id="settings-form">
+            <!-- Connection Settings -->
+            <fieldset class="mb-6">
+              <legend class="text-sm font-semibold mb-3">Connection</legend>
+
+              <div class="mb-4">
+                <label for="ws-url" class="text-sm font-medium text-secondary">WebSocket URL</label>
+                <input
+                  id="ws-url"
+                  type="url"
+                  class="mt-1"
+                  value="ws://localhost:8080/ws"
+                  placeholder="ws://localhost:8080/ws"
+                >
+              </div>
+
+              <div class="flex items-center gap-2">
+                <label class="toggle">
+                  <input type="checkbox" class="toggle__input" id="auto-reconnect" checked>
+                  <span class="toggle__track"></span>
+                  <span class="toggle__thumb"></span>
+                </label>
+                <span class="text-sm">Auto-reconnect on disconnect</span>
+              </div>
+            </fieldset>
+
+            <!-- Display Settings -->
+            <fieldset class="mb-6">
+              <legend class="text-sm font-semibold mb-3">Display</legend>
+
+              <div class="flex items-center gap-2 mb-3">
+                <label class="toggle">
+                  <input type="checkbox" class="toggle__input" id="show-timestamps" checked>
+                  <span class="toggle__track"></span>
+                  <span class="toggle__thumb"></span>
+                </label>
+                <span class="text-sm">Show timestamps</span>
+              </div>
+
+              <div class="flex items-center gap-2 mb-3">
+                <label class="toggle">
+                  <input type="checkbox" class="toggle__input" id="highlight-errors" checked>
+                  <span class="toggle__track"></span>
+                  <span class="toggle__thumb"></span>
+                </label>
+                <span class="text-sm">Highlight error responses</span>
+              </div>
+
+              <div class="flex items-center gap-2">
+                <label class="toggle">
+                  <input type="checkbox" class="toggle__input" id="group-pairs" checked>
+                  <span class="toggle__track"></span>
+                  <span class="toggle__thumb"></span>
+                </label>
+                <span class="text-sm">Group command/response pairs</span>
+              </div>
+            </fieldset>
+
+            <!-- Alert Settings -->
+            <fieldset>
+              <legend class="text-sm font-semibold mb-3">Alerts</legend>
+
+              <div class="mb-4">
+                <label for="alert-patterns" class="text-sm font-medium text-secondary">
+                  Alert Patterns (one per line)
+                </label>
+                <textarea
+                  id="alert-patterns"
+                  class="mt-1"
+                  rows="4"
+                  placeholder="6A82&#10;6D00&#10;6E00"
+                ></textarea>
+                <p class="text-xs text-tertiary mt-1">
+                  Enter SW codes to trigger alerts (e.g., 6A82 for "File not found")
+                </p>
+              </div>
+
+              <div class="flex items-center gap-2">
+                <label class="toggle">
+                  <input type="checkbox" class="toggle__input" id="sound-alerts">
+                  <span class="toggle__track"></span>
+                  <span class="toggle__thumb"></span>
+                </label>
+                <span class="text-sm">Play sound on alert</span>
+              </div>
+            </fieldset>
+          </form>
+        </div>
+
+        <div class="modal__footer">
+          <button type="button" class="btn btn--secondary" data-close-modal>Cancel</button>
+          <button type="button" class="btn btn--primary" id="save-settings">Save Changes</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Export Modal -->
+    <div id="export-modal" class="hidden" role="dialog" aria-labelledby="export-title" aria-modal="true">
+      <div class="modal-backdrop" data-close-modal></div>
+      <div class="modal">
+        <div class="modal__header">
+          <h2 id="export-title" class="modal__title">Export Logs</h2>
+          <button class="modal__close btn btn--ghost btn--icon" type="button" aria-label="Close" data-close-modal>
+            <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5">
+              <path d="M5 5l10 10M15 5L5 15"/>
+            </svg>
+          </button>
+        </div>
+
+        <div class="modal__body">
+          <form id="export-form">
+            <div class="mb-4">
+              <label class="text-sm font-medium text-secondary mb-2 block">Format</label>
+              <div class="tabs__list">
+                <button type="button" class="tabs__tab tabs__tab--active" data-format="json">JSON</button>
+                <button type="button" class="tabs__tab" data-format="csv">CSV</button>
+                <button type="button" class="tabs__tab" data-format="txt">Text</button>
+              </div>
+            </div>
+
+            <div class="mb-4">
+              <label class="text-sm font-medium text-secondary mb-2 block">Include</label>
+              <div class="flex flex-col gap-2">
+                <label class="flex items-center gap-2">
+                  <input type="checkbox" id="export-timestamps" checked>
+                  <span class="text-sm">Timestamps</span>
+                </label>
+                <label class="flex items-center gap-2">
+                  <input type="checkbox" id="export-parsed" checked>
+                  <span class="text-sm">Parsed APDU fields</span>
+                </label>
+                <label class="flex items-center gap-2">
+                  <input type="checkbox" id="export-raw">
+                  <span class="text-sm">Raw hex only</span>
+                </label>
+              </div>
+            </div>
+
+            <div class="mb-4">
+              <label for="export-filename" class="text-sm font-medium text-secondary">Filename</label>
+              <input
+                id="export-filename"
+                type="text"
+                class="mt-1"
+                value="apdu-log"
+                placeholder="apdu-log"
+              >
+            </div>
+          </form>
+        </div>
+
+        <div class="modal__footer">
+          <button type="button" class="btn btn--secondary" data-close-modal>Cancel</button>
+          <button type="button" class="btn btn--primary" id="do-export">
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5">
+              <path d="M7 1v8M3 5l4 4 4-4M2 13h10"/>
+            </svg>
+            Download
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- JavaScript -->
+  <script type="module" src="/static/js/app.js"></script>
+</body>
+</html>

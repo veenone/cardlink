@@ -1,0 +1,300 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "gp-ota-tester"
+version = "1.0.0"
+description = "GlobalPlatform Amendment B (SCP81) UICC Test Platform with mobile phone integration"
+readme = "README.md"
+license = {text = "MIT"}
+authors = [
+    {name = "Your Name", email = "your.email@example.com"}
+]
+keywords = [
+    "globalplatform",
+    "uicc",
+    "sim",
+    "ota",
+    "scp81",
+    "smartcard",
+    "testing",
+    "android",
+    "adb",
+    "bip",
+    "mobile"
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Telecommunications Industry",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Security :: Cryptography",
+    "Topic :: Software Development :: Testing",
+    "Topic :: System :: Hardware",
+]
+requires-python = ">=3.9"
+dependencies = [
+    "click>=8.0",
+    "requests>=2.28",
+    "pyyaml>=6.0",
+    "rich>=13.0",       # For pretty console output
+]
+
+[project.optional-dependencies]
+psk = [
+    "sslpsk3>=1.0",     # PSK-TLS support
+]
+server = [
+    "sslpsk3>=1.0",     # PSK-TLS support
+    "pydantic>=2.0",    # Data validation for events
+]
+database = [
+    "sqlalchemy>=2.0",  # ORM
+    "alembic>=1.12",    # Migrations
+    "cryptography>=41.0",  # PSK key encryption
+]
+mysql = [
+    "mysqlclient>=2.0",  # MySQL driver
+]
+postgresql = [
+    "psycopg2-binary>=2.9",  # PostgreSQL driver
+]
+pcsc = [
+    "pyscard>=2.0",     # PC/SC smart card interface (for provisioning)
+]
+phone = [
+    "adb-shell>=0.4",   # Alternative ADB library (optional)
+    "pure-python-adb>=0.3",  # Pure Python ADB (optional fallback)
+]
+modem = [
+    "pyserial>=3.5",    # Serial port communication
+]
+dev = [
+    "pytest>=7.0",
+    "pytest-cov>=4.0",
+    "pytest-asyncio>=0.21",
+    "pytest-timeout>=2.0",
+    "mypy>=1.0",
+    "black>=23.0",
+    "isort>=5.12",
+    "ruff>=0.1",
+    "pre-commit>=3.0",
+]
+docs = [
+    "mkdocs>=1.5",
+    "mkdocs-material>=9.0",
+    "mkdocstrings[python]>=0.24",
+]
+all = [
+    "gp-ota-tester[psk,server,database,pcsc,phone,modem,dev,docs]",
+]
+
+[project.urls]
+Homepage = "https://github.com/yourusername/gp-ota-tester"
+Documentation = "https://yourusername.github.io/gp-ota-tester"
+Repository = "https://github.com/yourusername/gp-ota-tester.git"
+Issues = "https://github.com/yourusername/gp-ota-tester/issues"
+
+[project.scripts]
+gp-ota-server = "gp_ota_tester.cli.server:main"
+gp-server = "gp_ota_tester.cli.server:main"
+gp-phone = "gp_ota_tester.cli.phone:main"
+gp-provision = "gp_ota_tester.cli.provision:main"
+gp-test = "gp_ota_tester.cli.test:main"
+gp-db = "gp_ota_tester.cli.db:main"
+gp-modem = "gp_ota_tester.cli.modem:main"
+gp-dashboard = "gp_ota_tester.cli.dashboard:main"
+
+[project.entry-points."gp_ota_tester.plugins"]
+# Extensibility for custom assertions/handlers
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+gp_ota_tester = [
+    "py.typed",
+    "data/*.yaml",
+    "dashboard/static/**/*",
+    "dashboard/static/css/*.css",
+    "dashboard/static/js/*.js",
+    "dashboard/static/js/**/*.js",
+]
+
+# ============================================================================
+# Black - Code Formatter
+# ============================================================================
+[tool.black]
+line-length = 100
+target-version = ['py39', 'py310', 'py311', 'py312']
+include = '\.pyi?$'
+exclude = '''
+/(
+    \.eggs
+  | \.git
+  | \.hg
+  | \.mypy_cache
+  | \.tox
+  | \.venv
+  | _build
+  | buck-out
+  | build
+  | dist
+)/
+'''
+
+# ============================================================================
+# isort - Import Sorting
+# ============================================================================
+[tool.isort]
+profile = "black"
+line_length = 100
+skip_gitignore = true
+known_first_party = ["gp_ota_tester"]
+sections = ["FUTURE", "STDLIB", "THIRDPARTY", "FIRSTPARTY", "LOCALFOLDER"]
+
+# ============================================================================
+# MyPy - Type Checking
+# ============================================================================
+[tool.mypy]
+python_version = "3.9"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+check_untyped_defs = true
+disallow_untyped_decorators = true
+no_implicit_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+warn_no_return = true
+follow_imports = "silent"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "tests.*"
+disallow_untyped_defs = false
+
+[[tool.mypy.overrides]]
+module = [
+    "smartcard.*",
+    "sslpsk3.*",
+]
+ignore_missing_imports = true
+
+# ============================================================================
+# Pytest - Testing
+# ============================================================================
+[tool.pytest.ini_options]
+minversion = "7.0"
+addopts = [
+    "-ra",
+    "-q",
+    "--strict-markers",
+    "--strict-config",
+]
+testpaths = ["tests"]
+pythonpath = ["src"]
+markers = [
+    "unit: Unit tests (fast, no external dependencies)",
+    "integration: Integration tests (may require server)",
+    "pcsc: Tests requiring PC/SC smart card reader",
+    "phone: Tests requiring connected Android phone",
+    "e2e: End-to-end tests (requires phone + UICC + server)",
+    "slow: Slow tests (skipped by default)",
+]
+filterwarnings = [
+    "error",
+    "ignore::DeprecationWarning",
+]
+
+# ============================================================================
+# Coverage
+# ============================================================================
+[tool.coverage.run]
+source = ["src"]
+branch = true
+parallel = true
+omit = [
+    "*/tests/*",
+    "*/__init__.py",
+]
+
+[tool.coverage.paths]
+source = [
+    "src/",
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+    "if TYPE_CHECKING:",
+    "if typing.TYPE_CHECKING:",
+    "@abstractmethod",
+]
+fail_under = 80
+show_missing = true
+
+# ============================================================================
+# Ruff - Fast Linter
+# ============================================================================
+[tool.ruff]
+line-length = 100
+target-version = "py39"
+
+[tool.ruff.lint]
+select = [
+    "E",      # pycodestyle errors
+    "W",      # pycodestyle warnings
+    "F",      # Pyflakes
+    "I",      # isort
+    "B",      # flake8-bugbear
+    "C4",     # flake8-comprehensions
+    "UP",     # pyupgrade
+    "ARG",    # flake8-unused-arguments
+    "SIM",    # flake8-simplify
+]
+ignore = [
+    "E501",   # line too long (handled by black)
+    "B008",   # function calls in argument defaults
+    "C901",   # too complex
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**/*" = ["ARG", "S101"]
+
+# ============================================================================
+# Pre-commit hooks configuration reference
+# ============================================================================
+# Create .pre-commit-config.yaml with:
+# repos:
+#   - repo: https://github.com/pre-commit/pre-commit-hooks
+#     rev: v4.5.0
+#     hooks:
+#       - id: trailing-whitespace
+#       - id: end-of-file-fixer
+#       - id: check-yaml
+#       - id: check-added-large-files
+#   - repo: https://github.com/psf/black
+#     rev: 23.12.1
+#     hooks:
+#       - id: black
+#   - repo: https://github.com/pycqa/isort
+#     rev: 5.13.2
+#     hooks:
+#       - id: isort
+#   - repo: https://github.com/astral-sh/ruff-pre-commit
+#     rev: v0.1.9
+#     hooks:
+#       - id: ruff

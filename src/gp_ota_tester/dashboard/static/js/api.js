@@ -1,0 +1,319 @@
+/**
+ * API Client for GP OTA Tester Dashboard
+ *
+ * HTTP client for REST API interactions with the backend.
+ */
+
+/**
+ * @typedef {Object} APIConfig
+ * @property {string} baseUrl - Base URL for API requests
+ * @property {number} timeout - Request timeout in ms
+ * @property {Object} headers - Default headers
+ */
+
+/** @type {APIConfig} */
+const defaultConfig = {
+  baseUrl: '/api',
+  timeout: 30000,
+  headers: {
+    'Content-Type': 'application/json',
+  },
+};
+
+/**
+ * Custom API error class.
+ */
+export class APIError extends Error {
+  constructor(message, status, data = null) {
+    super(message);
+    this.name = 'APIError';
+    this.status = status;
+    this.data = data;
+  }
+}
+
+/**
+ * Creates an API client instance.
+ * @param {Partial<APIConfig>} [config] - Configuration options
+ * @returns {Object} API client
+ */
+export function createAPIClient(config = {}) {
+  const cfg = { ...defaultConfig, ...config };
+
+  /**
+   * Makes an HTTP request.
+   * @param {string} method - HTTP method
+   * @param {string} path - API path
+   * @param {Object} [options={}] - Request options
+   * @returns {Promise<*>} Response data
+   */
+  async function request(method, path, options = {}) {
+    const url = `${cfg.baseUrl}${path}`;
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), options.timeout || cfg.timeout);
+
+    const fetchOptions = {
+      method,
+      headers: { ...cfg.headers, ...options.headers },
+      signal: controller.signal,
+    };
+
+    if (options.body && method !== 'GET') {
+      fetchOptions.body = JSON.stringify(options.body);
+    }
+
+    try {
+      const response = await fetch(url, fetchOptions);
+      clearTimeout(timeoutId);
+
+      // Handle non-JSON responses
+      const contentType = response.headers.get('Content-Type');
+      let data;
+
+      if (contentType?.includes('application/json')) {
+        data = await response.json();
+      } else if (contentType?.includes('text/')) {
+        data = await response.text();
+      } else {
+        data = await response.blob();
+      }
+
+      if (!response.ok) {
+        throw new APIError(
+          data?.error || data?.message || `HTTP ${response.status}`,
+          response.status,
+          data
+        );
+      }
+
+      return data;
+    } catch (error) {
+      clearTimeout(timeoutId);
+
+      if (error.name === 'AbortError') {
+        throw new APIError('Request timeout', 408);
+      }
+
+      if (error instanceof APIError) {
+        throw error;
+      }
+
+      throw new APIError(error.message, 0);
+    }
+  }
+
+  return {
+    /**
+     * GET request.
+     * @param {string} path - API path
+     * @param {Object} [options] - Request options
+     * @returns {Promise<*>} Response data
+     */
+    get(path, options) {
+      return request('GET', path, options);
+    },
+
+    /**
+     * POST request.
+     * @param {string} path - API path
+     * @param {Object} [body] - Request body
+     * @param {Object} [options] - Request options
+     * @returns {Promise<*>} Response data
+     */
+    post(path, body, options) {
+      return request('POST', path, { ...options, body });
+    },
+
+    /**
+     * PUT request.
+     * @param {string} path - API path
+     * @param {Object} [body] - Request body
+     * @param {Object} [options] - Request options
+     * @returns {Promise<*>} Response data
+     */
+    put(path, body, options) {
+      return request('PUT', path, { ...options, body });
+    },
+
+    /**
+     * DELETE request.
+     * @param {string} path - API path
+     * @param {Object} [options] - Request options
+     * @returns {Promise<*>} Response data
+     */
+    delete(path, options) {
+      return request('DELETE', path, options);
+    },
+
+    /**
+     * PATCH request.
+     * @param {string} path - API path
+     * @param {Object} [body] - Request body
+     * @param {Object} [options] - Request options
+     * @returns {Promise<*>} Response data
+     */
+    patch(path, body, options) {
+      return request('PATCH', path, { ...options, body });
+    },
+
+    // =========================================================================
+    // Session Endpoints
+    // =========================================================================
+
+    /**
+     * Gets all sessions.
+     * @returns {Promise<Object[]>} Sessions
+     */
+    getSessions() {
+      return this.get('/sessions');
+    },
+
+    /**
+     * Gets a specific session.
+     * @param {string} sessionId - Session ID
+     * @returns {Promise<Object>} Session
+     */
+    getSession(sessionId) {
+      return this.get(`/sessions/${sessionId}`);
+    },
+
+    /**
+     * Creates a new session.
+     * @param {Object} data - Session data
+     * @returns {Promise<Object>} Created session
+     */
+    createSession(data) {
+      return this.post('/sessions', data);
+    },
+
+    /**
+     * Updates a session.
+     * @param {string} sessionId - Session ID
+     * @param {Object} data - Update data
+     * @returns {Promise<Object>} Updated session
+     */
+    updateSession(sessionId, data) {
+      return this.patch(`/sessions/${sessionId}`, data);
+    },
+
+    /**
+     * Deletes a session.
+     * @param {string} sessionId - Session ID
+     * @returns {Promise<void>}
+     */
+    deleteSession(sessionId) {
+      return this.delete(`/sessions/${sessionId}`);
+    },
+
+    // =========================================================================
+    // APDU Endpoints
+    // =========================================================================
+
+    /**
+     * Gets APDUs for a session.
+     * @param {string} sessionId - Session ID
+     * @param {Object} [params] - Query parameters
+     * @returns {Promise<Object[]>} APDU entries
+     */
+    getApdus(sessionId, params = {}) {
+      const query = new URLSearchParams(params).toString();
+      const path = `/sessions/${sessionId}/apdus${query ? `?${query}` : ''}`;
+      return this.get(path);
+    },
+
+    /**
+     * Sends an APDU command.
+     * @param {string} sessionId - Session ID
+     * @param {Object} apdu - APDU data
+     * @returns {Promise<Object>} Response
+     */
+    sendApdu(sessionId, apdu) {
+      return this.post(`/sessions/${sessionId}/apdus`, apdu);
+    },
+
+    /**
+     * Clears APDUs for a session.
+     * @param {string} sessionId - Session ID
+     * @returns {Promise<void>}
+     */
+    clearApdus(sessionId) {
+      return this.delete(`/sessions/${sessionId}/apdus`);
+    },
+
+    // =========================================================================
+    // Export Endpoints
+    // =========================================================================
+
+    /**
+     * Exports APDUs in specified format.
+     * @param {string} sessionId - Session ID
+     * @param {string} format - Export format (json, csv, txt)
+     * @param {Object} [options] - Export options
+     * @returns {Promise<Blob>} Export data
+     */
+    async exportApdus(sessionId, format, options = {}) {
+      const params = new URLSearchParams({ format, ...options }).toString();
+      const response = await fetch(`${cfg.baseUrl}/sessions/${sessionId}/export?${params}`);
+
+      if (!response.ok) {
+        throw new APIError('Export failed', response.status);
+      }
+
+      return response.blob();
+    },
+
+    // =========================================================================
+    // Modem Endpoints
+    // =========================================================================
+
+    /**
+     * Gets connected modems.
+     * @returns {Promise<Object[]>} Modems
+     */
+    getModems() {
+      return this.get('/modems');
+    },
+
+    /**
+     * Gets modem info.
+     * @param {string} port - Modem port
+     * @returns {Promise<Object>} Modem info
+     */
+    getModemInfo(port) {
+      return this.get(`/modems/${encodeURIComponent(port)}`);
+    },
+
+    /**
+     * Sends AT command to modem.
+     * @param {string} port - Modem port
+     * @param {string} command - AT command
+     * @returns {Promise<Object>} Response
+     */
+    sendAtCommand(port, command) {
+      return this.post(`/modems/${encodeURIComponent(port)}/at`, { command });
+    },
+
+    // =========================================================================
+    // System Endpoints
+    // =========================================================================
+
+    /**
+     * Gets system status.
+     * @returns {Promise<Object>} Status
+     */
+    getStatus() {
+      return this.get('/status');
+    },
+
+    /**
+     * Gets server configuration.
+     * @returns {Promise<Object>} Configuration
+     */
+    getConfig() {
+      return this.get('/config');
+    },
+  };
+}
+
+// Export singleton instance
+export const api = createAPIClient();
