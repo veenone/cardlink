@@ -1,0 +1,22 @@
+{
+  "filePath": ".spec-workflow/specs/observability/tasks.md",
+  "currentVersion": 2,
+  "snapshots": [
+    {
+      "version": 1,
+      "filename": "snapshot-001.json",
+      "timestamp": "2025-11-25T12:04:11.024Z",
+      "trigger": "initial",
+      "approvalId": "approval_1764072251002_gc9y7p4wv",
+      "approvalTitle": "Observability Tasks Document"
+    },
+    {
+      "version": 2,
+      "filename": "snapshot-002.json",
+      "timestamp": "2025-11-25T12:04:27.558Z",
+      "trigger": "approved",
+      "approvalId": "approval_1764072251002_gc9y7p4wv",
+      "approvalTitle": "Observability Tasks Document"
+    }
+  ]
+}

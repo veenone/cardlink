@@ -1,0 +1,132 @@
+# GP OTA Server Configuration
+#
+# This file contains all configurable options for the PSK-TLS Admin Server.
+# Copy this file and modify as needed for your deployment.
+#
+# Usage:
+#   gp-ota-server start --config server_config.yaml
+
+# =============================================================================
+# Server Network Configuration
+# =============================================================================
+
+# Host address to bind to
+# - "127.0.0.1" for localhost only (default, most secure)
+# - "0.0.0.0" to accept connections from any interface (use with caution)
+host: "127.0.0.1"
+
+# Port to listen on (default: 8443)
+# Standard TLS port is 443, but we use 8443 to avoid requiring root privileges
+port: 8443
+
+# Listen backlog for pending connections (default: 5)
+backlog: 5
+
+# =============================================================================
+# Connection Handling
+# =============================================================================
+
+# Maximum concurrent connections (default: 10)
+# Each connection uses one thread from the pool
+max_connections: 10
+
+# Read timeout for HTTP requests in seconds (default: 30.0)
+read_timeout: 30.0
+
+# TLS handshake timeout in seconds (default: 30.0)
+handshake_timeout: 30.0
+
+# =============================================================================
+# Session Management
+# =============================================================================
+
+# Session timeout in seconds (default: 300 = 5 minutes)
+# Sessions inactive longer than this will be automatically closed
+session_timeout: 300.0
+
+# =============================================================================
+# PSK Key Store Configuration
+# =============================================================================
+
+# Path to YAML file containing PSK identities and keys
+# See psk_keys.yaml for format
+keys_file: "psk_keys.yaml"
+
+# =============================================================================
+# Cipher Suite Configuration
+# =============================================================================
+
+cipher_config:
+  # Enable production-grade cipher suites (default: true)
+  # TLS_PSK_WITH_AES_128_CBC_SHA256
+  # TLS_PSK_WITH_AES_256_CBC_SHA384
+  enable_production: true
+
+  # Enable legacy cipher suites for older clients (default: false)
+  # TLS_PSK_WITH_AES_128_CBC_SHA
+  # TLS_PSK_WITH_AES_256_CBC_SHA
+  enable_legacy: false
+
+  # !! DANGER !! Enable NULL cipher suites (default: false)
+  # TLS_PSK_WITH_NULL_SHA
+  # TLS_PSK_WITH_NULL_SHA256
+  #
+  # WARNING: NULL ciphers provide NO ENCRYPTION!
+  # Traffic will be transmitted in PLAINTEXT.
+  # Only enable for debugging in isolated test environments.
+  enable_null_ciphers: false
+
+# =============================================================================
+# Logging Configuration
+# =============================================================================
+
+logging:
+  # Log level: DEBUG, INFO, WARNING, ERROR, CRITICAL
+  level: "INFO"
+
+  # Log format
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+
+  # Log to file (optional)
+  # file: "/var/log/gp-ota-server/server.log"
+
+# =============================================================================
+# Security Settings
+# =============================================================================
+
+security:
+  # PSK mismatch tracking window in seconds
+  # Multiple mismatches from same IP within this window trigger warning
+  mismatch_window: 60.0
+
+  # Number of mismatches to trigger brute-force warning
+  mismatch_threshold: 3
+
+  # Error rate monitoring window in seconds
+  error_rate_window: 300.0
+
+  # Number of errors in window to trigger high error rate alert
+  error_rate_threshold: 10
+
+# =============================================================================
+# Event Emission
+# =============================================================================
+
+events:
+  # Enable event emission for dashboard/monitoring integration
+  enabled: true
+
+  # Event queue size (events dropped if queue full)
+  queue_size: 1000
+
+# =============================================================================
+# Environment Variable Overrides
+# =============================================================================
+#
+# The following environment variables override config file values:
+#
+#   GP_OTA_SERVER_HOST     - Override host
+#   GP_OTA_SERVER_PORT     - Override port
+#   GP_OTA_SERVER_CONFIG   - Default config file path
+#
+# CLI options override both config file and environment variables.

@@ -1,0 +1,22 @@
+{
+  "filePath": ".spec-workflow/specs/web-dashboard/design.md",
+  "currentVersion": 2,
+  "snapshots": [
+    {
+      "version": 1,
+      "filename": "snapshot-001.json",
+      "timestamp": "2025-11-25T10:51:13.029Z",
+      "trigger": "initial",
+      "approvalId": "approval_1764067873019_xm2qvg2x7",
+      "approvalTitle": "Web Dashboard Design Document"
+    },
+    {
+      "version": 2,
+      "filename": "snapshot-002.json",
+      "timestamp": "2025-11-25T10:56:14.951Z",
+      "trigger": "approved",
+      "approvalId": "approval_1764067873019_xm2qvg2x7",
+      "approvalTitle": "Web Dashboard Design Document"
+    }
+  ]
+}

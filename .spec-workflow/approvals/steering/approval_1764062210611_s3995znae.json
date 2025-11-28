@@ -1,0 +1,21 @@
+{
+  "id": "approval_1764062210611_s3995znae",
+  "title": "Product Steering Document",
+  "filePath": ".spec-workflow/steering/product.md",
+  "type": "document",
+  "status": "needs-revision",
+  "createdAt": "2025-11-25T09:16:50.611Z",
+  "category": "steering",
+  "categoryName": "steering",
+  "response": "Feedback Summary (1 comments):\n\nGeneral Comments:\n1. add feature for the server to have a frontend for the tester to monitor communication, log communication or perform manual RAM command to uicc\n\n",
+  "annotations": "{\n  \"decision\": \"needs-revision\",\n  \"comments\": [\n    {\n      \"type\": \"general\",\n      \"comment\": \"add feature for the server to have a frontend for the tester to monitor communication, log communication or perform manual RAM command to uicc\",\n      \"timestamp\": \"2025-11-25T09:19:10.484Z\",\n      \"id\": \"comment_1764062350484_dlp001bvz\"\n    }\n  ],\n  \"summary\": \"Feedback Summary (1 comments):\\n\\nGeneral Comments:\\n1. add feature for the server to have a frontend for the tester to monitor communication, log communication or perform manual RAM command to uicc\\n\\n\",\n  \"timestamp\": \"2025-11-25T09:20:10.868Z\"\n}",
+  "respondedAt": "2025-11-25T09:20:10.904Z",
+  "comments": [
+    {
+      "type": "general",
+      "comment": "add feature for the server to have a frontend for the tester to monitor communication, log communication or perform manual RAM command to uicc",
+      "timestamp": "2025-11-25T09:19:10.484Z",
+      "id": "comment_1764062350484_dlp001bvz"
+    }
+  ]
+}

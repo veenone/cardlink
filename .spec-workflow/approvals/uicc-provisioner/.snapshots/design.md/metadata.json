@@ -1,0 +1,22 @@
+{
+  "filePath": ".spec-workflow/specs/uicc-provisioner/design.md",
+  "currentVersion": 2,
+  "snapshots": [
+    {
+      "version": 1,
+      "filename": "snapshot-001.json",
+      "timestamp": "2025-11-25T11:39:56.727Z",
+      "trigger": "initial",
+      "approvalId": "approval_1764070796706_lrfclzu6z",
+      "approvalTitle": "UICC Provisioner Design Document"
+    },
+    {
+      "version": 2,
+      "filename": "snapshot-002.json",
+      "timestamp": "2025-11-25T11:44:15.085Z",
+      "trigger": "approved",
+      "approvalId": "approval_1764070796706_lrfclzu6z",
+      "approvalTitle": "UICC Provisioner Design Document"
+    }
+  ]
+}

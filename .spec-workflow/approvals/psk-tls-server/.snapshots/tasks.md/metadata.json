@@ -1,0 +1,22 @@
+{
+  "filePath": ".spec-workflow/specs/psk-tls-server/tasks.md",
+  "currentVersion": 2,
+  "snapshots": [
+    {
+      "version": 1,
+      "filename": "snapshot-001.json",
+      "timestamp": "2025-11-25T10:43:36.725Z",
+      "trigger": "initial",
+      "approvalId": "approval_1764067416707_i8kipm4sz",
+      "approvalTitle": "PSK-TLS Server Tasks Document"
+    },
+    {
+      "version": 2,
+      "filename": "snapshot-002.json",
+      "timestamp": "2025-11-25T10:43:54.474Z",
+      "trigger": "approved",
+      "approvalId": "approval_1764067416707_i8kipm4sz",
+      "approvalTitle": "PSK-TLS Server Tasks Document"
+    }
+  ]
+}

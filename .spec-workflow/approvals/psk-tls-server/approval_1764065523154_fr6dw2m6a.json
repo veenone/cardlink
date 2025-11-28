@@ -1,0 +1,27 @@
+{
+  "id": "approval_1764065523154_fr6dw2m6a",
+  "title": "PSK-TLS Server Requirements",
+  "filePath": ".spec-workflow/specs/psk-tls-server/requirements.md",
+  "type": "document",
+  "status": "needs-revision",
+  "createdAt": "2025-11-25T10:12:03.154Z",
+  "category": "spec",
+  "categoryName": "psk-tls-server",
+  "response": "Feedback Summary (2 comments):\n\nGeneral Comments:\n1. increase more TLS algo, including NULL SHA for easy handshake test\n2. add negative case handler such as : connection interruption, mismatched TLS PSK between uicc and server, handshake interruption by jitter on other means\n\n",
+  "annotations": "{\n  \"decision\": \"needs-revision\",\n  \"comments\": [\n    {\n      \"type\": \"general\",\n      \"comment\": \"increase more TLS algo, including NULL SHA for easy handshake test\",\n      \"timestamp\": \"2025-11-25T10:20:47.207Z\",\n      \"id\": \"comment_1764066047207_m94in632o\"\n    },\n    {\n      \"type\": \"general\",\n      \"comment\": \"add negative case handler such as : connection interruption, mismatched TLS PSK between uicc and server, handshake interruption by jitter on other means\",\n      \"timestamp\": \"2025-11-25T10:22:51.619Z\",\n      \"id\": \"comment_1764066171619_7nsahn1of\"\n    }\n  ],\n  \"summary\": \"Feedback Summary (2 comments):\\n\\nGeneral Comments:\\n1. increase more TLS algo, including NULL SHA for easy handshake test\\n2. add negative case handler such as : connection interruption, mismatched TLS PSK between uicc and server, handshake interruption by jitter on other means\\n\\n\",\n  \"timestamp\": \"2025-11-25T10:22:54.225Z\"\n}",
+  "respondedAt": "2025-11-25T10:22:54.243Z",
+  "comments": [
+    {
+      "type": "general",
+      "comment": "increase more TLS algo, including NULL SHA for easy handshake test",
+      "timestamp": "2025-11-25T10:20:47.207Z",
+      "id": "comment_1764066047207_m94in632o"
+    },
+    {
+      "type": "general",
+      "comment": "add negative case handler such as : connection interruption, mismatched TLS PSK between uicc and server, handshake interruption by jitter on other means",
+      "timestamp": "2025-11-25T10:22:51.619Z",
+      "id": "comment_1764066171619_7nsahn1of"
+    }
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "id": "approval_1764067502692_hk5fvocsf",
+  "title": "Web Dashboard Requirements Document",
+  "filePath": ".spec-workflow/specs/web-dashboard/requirements.md",
+  "type": "document",
+  "status": "needs-revision",
+  "createdAt": "2025-11-25T10:45:02.692Z",
+  "category": "spec",
+  "categoryName": "web-dashboard",
+  "response": "Feedback Summary (1 comments):\n\nGeneral Comments:\n1. dashboard content should be informative, proritize UX of the users, and apply professional styling\n\n",
+  "annotations": "{\n  \"decision\": \"needs-revision\",\n  \"comments\": [\n    {\n      \"type\": \"general\",\n      \"comment\": \"dashboard content should be informative, proritize UX of the users, and apply professional styling\",\n      \"timestamp\": \"2025-11-25T10:47:07.404Z\",\n      \"id\": \"comment_1764067627404_f7bgo11ub\"\n    }\n  ],\n  \"summary\": \"Feedback Summary (1 comments):\\n\\nGeneral Comments:\\n1. dashboard content should be informative, proritize UX of the users, and apply professional styling\\n\\n\",\n  \"timestamp\": \"2025-11-25T10:47:09.266Z\"\n}",
+  "respondedAt": "2025-11-25T10:47:09.286Z",
+  "comments": [
+    {
+      "type": "general",
+      "comment": "dashboard content should be informative, proritize UX of the users, and apply professional styling",
+      "timestamp": "2025-11-25T10:47:07.404Z",
+      "id": "comment_1764067627404_f7bgo11ub"
+    }
+  ]
+}

@@ -1,0 +1,22 @@
+{
+  "filePath": ".spec-workflow/specs/observability/design.md",
+  "currentVersion": 2,
+  "snapshots": [
+    {
+      "version": 1,
+      "filename": "snapshot-001.json",
+      "timestamp": "2025-11-25T12:02:10.424Z",
+      "trigger": "initial",
+      "approvalId": "approval_1764072130405_64o424fyu",
+      "approvalTitle": "Observability Design Document"
+    },
+    {
+      "version": 2,
+      "filename": "snapshot-002.json",
+      "timestamp": "2025-11-25T12:02:44.978Z",
+      "trigger": "approved",
+      "approvalId": "approval_1764072130405_64o424fyu",
+      "approvalTitle": "Observability Design Document"
+    }
+  ]
+}

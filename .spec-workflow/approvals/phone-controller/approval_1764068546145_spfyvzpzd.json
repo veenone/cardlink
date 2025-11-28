@@ -1,0 +1,21 @@
+{
+  "id": "approval_1764068546145_spfyvzpzd",
+  "title": "Phone Controller Requirements Document",
+  "filePath": ".spec-workflow/specs/phone-controller/requirements.md",
+  "type": "document",
+  "status": "needs-revision",
+  "createdAt": "2025-11-25T11:02:26.145Z",
+  "category": "spec",
+  "categoryName": "phone-controller",
+  "response": "Feedback Summary (1 comments):\n\nGeneral Comments:\n1. add requirement, that user can query the information of the device (i.e: manufacturer, iccic, imei, imsi, etc) for device profiling\n\n",
+  "annotations": "{\n  \"decision\": \"needs-revision\",\n  \"comments\": [\n    {\n      \"type\": \"general\",\n      \"comment\": \"add requirement, that user can query the information of the device (i.e: manufacturer, iccic, imei, imsi, etc) for device profiling\",\n      \"timestamp\": \"2025-11-25T11:04:13.120Z\",\n      \"id\": \"comment_1764068653120_hqqohgzin\"\n    }\n  ],\n  \"summary\": \"Feedback Summary (1 comments):\\n\\nGeneral Comments:\\n1. add requirement, that user can query the information of the device (i.e: manufacturer, iccic, imei, imsi, etc) for device profiling\\n\\n\",\n  \"timestamp\": \"2025-11-25T11:04:14.598Z\"\n}",
+  "respondedAt": "2025-11-25T11:04:14.615Z",
+  "comments": [
+    {
+      "type": "general",
+      "comment": "add requirement, that user can query the information of the device (i.e: manufacturer, iccic, imei, imsi, etc) for device profiling",
+      "timestamp": "2025-11-25T11:04:13.120Z",
+      "id": "comment_1764068653120_hqqohgzin"
+    }
+  ]
+}

@@ -1,0 +1,22 @@
+{
+  "filePath": ".spec-workflow/specs/modem-controller/requirements.md",
+  "currentVersion": 2,
+  "snapshots": [
+    {
+      "version": 1,
+      "filename": "snapshot-001.json",
+      "timestamp": "2025-11-25T11:21:02.621Z",
+      "trigger": "initial",
+      "approvalId": "approval_1764069662608_bduo6pzmo",
+      "approvalTitle": "Modem Controller Requirements Document"
+    },
+    {
+      "version": 2,
+      "filename": "snapshot-002.json",
+      "timestamp": "2025-11-25T11:21:36.458Z",
+      "trigger": "approved",
+      "approvalId": "approval_1764069662608_bduo6pzmo",
+      "approvalTitle": "Modem Controller Requirements Document"
+    }
+  ]
+}

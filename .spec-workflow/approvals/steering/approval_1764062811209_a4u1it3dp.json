@@ -1,0 +1,33 @@
+{
+  "id": "approval_1764062811209_a4u1it3dp",
+  "title": "Tech Steering Document",
+  "filePath": ".spec-workflow/steering/tech.md",
+  "type": "document",
+  "status": "needs-revision",
+  "createdAt": "2025-11-25T09:26:51.209Z",
+  "category": "steering",
+  "categoryName": "steering",
+  "response": "Feedback Summary (3 comments):\n\nGeneral Comments:\n1. add a layer for the frontend part of the server where this will be used by the tester to manage OTA activities between uicc and server, also to monitor the HTTPS TLS handshake between server and uicc\n2. server to support connectivity integrationi with network simulator such as amarisoft which is based on websocket  or TCP/IP connection\n3. include the scope of the target device, apart from mobile phone, it could also be iot modems such as Quectel RG500 eu. it supports AT command, integration with QXDM tool\n\n",
+  "annotations": "{\n  \"decision\": \"needs-revision\",\n  \"comments\": [\n    {\n      \"type\": \"general\",\n      \"comment\": \"add a layer for the frontend part of the server where this will be used by the tester to manage OTA activities between uicc and server, also to monitor the HTTPS TLS handshake between server and uicc\",\n      \"timestamp\": \"2025-11-25T09:29:32.341Z\",\n      \"id\": \"comment_1764062972341_m7ljrj6nx\"\n    },\n    {\n      \"type\": \"general\",\n      \"comment\": \"server to support connectivity integrationi with network simulator such as amarisoft which is based on websocket  or TCP/IP connection\",\n      \"timestamp\": \"2025-11-25T09:31:00.295Z\",\n      \"id\": \"comment_1764063060295_kxg956upt\"\n    },\n    {\n      \"type\": \"general\",\n      \"comment\": \"include the scope of the target device, apart from mobile phone, it could also be iot modems such as Quectel RG500 eu. it supports AT command, integration with QXDM tool\",\n      \"timestamp\": \"2025-11-25T09:33:15.675Z\",\n      \"id\": \"comment_1764063195675_j3h10dk1o\"\n    }\n  ],\n  \"summary\": \"Feedback Summary (3 comments):\\n\\nGeneral Comments:\\n1. add a layer for the frontend part of the server where this will be used by the tester to manage OTA activities between uicc and server, also to monitor the HTTPS TLS handshake between server and uicc\\n2. server to support connectivity integrationi with network simulator such as amarisoft which is based on websocket  or TCP/IP connection\\n3. include the scope of the target device, apart from mobile phone, it could also be iot modems such as Quectel RG500 eu. it supports AT command, integration with QXDM tool\\n\\n\",\n  \"timestamp\": \"2025-11-25T09:33:18.137Z\"\n}",
+  "respondedAt": "2025-11-25T09:33:18.158Z",
+  "comments": [
+    {
+      "type": "general",
+      "comment": "add a layer for the frontend part of the server where this will be used by the tester to manage OTA activities between uicc and server, also to monitor the HTTPS TLS handshake between server and uicc",
+      "timestamp": "2025-11-25T09:29:32.341Z",
+      "id": "comment_1764062972341_m7ljrj6nx"
+    },
+    {
+      "type": "general",
+      "comment": "server to support connectivity integrationi with network simulator such as amarisoft which is based on websocket  or TCP/IP connection",
+      "timestamp": "2025-11-25T09:31:00.295Z",
+      "id": "comment_1764063060295_kxg956upt"
+    },
+    {
+      "type": "general",
+      "comment": "include the scope of the target device, apart from mobile phone, it could also be iot modems such as Quectel RG500 eu. it supports AT command, integration with QXDM tool",
+      "timestamp": "2025-11-25T09:33:15.675Z",
+      "id": "comment_1764063195675_j3h10dk1o"
+    }
+  ]
+}

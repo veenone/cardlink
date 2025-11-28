@@ -1,0 +1,22 @@
+{
+  "filePath": ".spec-workflow/specs/modem-controller/design.md",
+  "currentVersion": 2,
+  "snapshots": [
+    {
+      "version": 1,
+      "filename": "snapshot-001.json",
+      "timestamp": "2025-11-25T11:23:54.171Z",
+      "trigger": "initial",
+      "approvalId": "approval_1764069834157_cyyrjzpmy",
+      "approvalTitle": "Modem Controller Design Document"
+    },
+    {
+      "version": 2,
+      "filename": "snapshot-002.json",
+      "timestamp": "2025-11-25T11:25:19.452Z",
+      "trigger": "approved",
+      "approvalId": "approval_1764069834157_cyyrjzpmy",
+      "approvalTitle": "Modem Controller Design Document"
+    }
+  ]
+}

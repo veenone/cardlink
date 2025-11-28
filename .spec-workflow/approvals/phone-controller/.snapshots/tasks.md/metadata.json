@@ -1,0 +1,22 @@
+{
+  "filePath": ".spec-workflow/specs/phone-controller/tasks.md",
+  "currentVersion": 2,
+  "snapshots": [
+    {
+      "version": 1,
+      "filename": "snapshot-001.json",
+      "timestamp": "2025-11-25T11:13:45.422Z",
+      "trigger": "initial",
+      "approvalId": "approval_1764069225410_7b7zmlalq",
+      "approvalTitle": "Phone Controller Tasks Document"
+    },
+    {
+      "version": 2,
+      "filename": "snapshot-002.json",
+      "timestamp": "2025-11-25T11:19:42.349Z",
+      "trigger": "approved",
+      "approvalId": "approval_1764069225410_7b7zmlalq",
+      "approvalTitle": "Phone Controller Tasks Document"
+    }
+  ]
+}

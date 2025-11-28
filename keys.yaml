@@ -1,0 +1,65 @@
+# PSK Keys Configuration
+#
+# This file contains Pre-Shared Key (PSK) identities and their corresponding
+# keys for TLS-PSK authentication.
+#
+# SECURITY WARNING:
+#   - This file contains sensitive cryptographic keys
+#   - Never commit real keys to version control
+#   - Protect this file with appropriate file permissions (chmod 600)
+#   - Keys should be at least 128 bits (16 bytes) for production use
+#
+# Format:
+#   identity: hex_encoded_key
+#
+# The identity is sent by the client during TLS handshake to identify
+# which PSK to use. The key must match exactly on both client and server.
+
+# =============================================================================
+# Example Test Cards
+# =============================================================================
+
+# Test card 1 - Standard test UICC
+# 16-byte (128-bit) key
+test_card_001: "0102030405060708090A0B0C0D0E0F10"
+
+# Test card 2 - Secondary test UICC
+# 16-byte (128-bit) key
+test_card_002: "1112131415161718191A1B1C1D1E1F20"
+
+# Test card 3 - With 32-byte (256-bit) key
+test_card_003: "00112233445566778899AABBCCDDEEFF00112233445566778899AABBCCDDEEFF"
+
+# =============================================================================
+# Development Keys (DO NOT USE IN PRODUCTION)
+# =============================================================================
+
+# Development UICC - All zeros (INSECURE - FOR TESTING ONLY)
+dev_card_insecure: "00000000000000000000000000000000"
+
+# =============================================================================
+# Production Cards (Template)
+# =============================================================================
+
+# Uncomment and add your production cards here:
+#
+# card_ICCID_12345678901234567890: "YOUR_SECURE_KEY_HEX"
+# card_ICCID_09876543210987654321: "YOUR_SECURE_KEY_HEX"
+
+# =============================================================================
+# Key Generation
+# =============================================================================
+#
+# Generate a random 128-bit key using Python:
+#
+#   import secrets
+#   print(secrets.token_hex(16))
+#
+# Generate a random 256-bit key:
+#
+#   print(secrets.token_hex(32))
+#
+# Or using OpenSSL:
+#
+#   openssl rand -hex 16
+#   openssl rand -hex 32

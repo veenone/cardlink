@@ -1,0 +1,22 @@
+{
+  "filePath": ".spec-workflow/specs/network-sim-integration/requirements.md",
+  "currentVersion": 2,
+  "snapshots": [
+    {
+      "version": 1,
+      "filename": "snapshot-001.json",
+      "timestamp": "2025-11-25T12:05:48.427Z",
+      "trigger": "initial",
+      "approvalId": "approval_1764072348412_qay9377wd",
+      "approvalTitle": "Network Simulator Integration Requirements Document"
+    },
+    {
+      "version": 2,
+      "filename": "snapshot-002.json",
+      "timestamp": "2025-11-25T12:24:25.723Z",
+      "trigger": "approved",
+      "approvalId": "approval_1764072348412_qay9377wd",
+      "approvalTitle": "Network Simulator Integration Requirements Document"
+    }
+  ]
+}

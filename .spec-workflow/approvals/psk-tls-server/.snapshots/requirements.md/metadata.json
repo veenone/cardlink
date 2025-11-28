@@ -1,0 +1,30 @@
+{
+  "filePath": ".spec-workflow/specs/psk-tls-server/requirements.md",
+  "currentVersion": 3,
+  "snapshots": [
+    {
+      "version": 1,
+      "filename": "snapshot-001.json",
+      "timestamp": "2025-11-25T10:12:03.165Z",
+      "trigger": "initial",
+      "approvalId": "approval_1764065523154_fr6dw2m6a",
+      "approvalTitle": "PSK-TLS Server Requirements"
+    },
+    {
+      "version": 2,
+      "filename": "snapshot-002.json",
+      "timestamp": "2025-11-25T10:22:54.234Z",
+      "trigger": "revision_requested",
+      "approvalId": "approval_1764065523154_fr6dw2m6a",
+      "approvalTitle": "PSK-TLS Server Requirements"
+    },
+    {
+      "version": 3,
+      "filename": "snapshot-003.json",
+      "timestamp": "2025-11-25T10:25:32.686Z",
+      "trigger": "approved",
+      "approvalId": "approval_1764066288832_23gkrmfzb",
+      "approvalTitle": "PSK-TLS Server Requirements (Revised)"
+    }
+  ]
+}
