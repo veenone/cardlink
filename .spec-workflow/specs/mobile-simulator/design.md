@@ -455,7 +455,7 @@ class ConnectionState(Enum):
 ## File Structure
 
 ```
-src/gp_ota_tester/
+src/cardlink/
 └── simulator/
     ├── __init__.py           # Public API exports
     ├── client.py             # MobileSimulator main class
@@ -599,7 +599,7 @@ gp-simulator config generate --output simulator.yaml
 
 ```python
 import pytest
-from gp_ota_tester.simulator import MobileSimulator, SimulatorConfig
+from cardlink.simulator import MobileSimulator, SimulatorConfig
 
 @pytest.fixture
 async def simulator(admin_server):

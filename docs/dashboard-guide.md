@@ -556,7 +556,7 @@ Use the dashboard server in your Python code:
 
 ```python
 import asyncio
-from gp_ota_tester.dashboard import DashboardServer, DashboardConfig
+from cardlink.dashboard import DashboardServer, DashboardConfig
 
 async def main():
     # Create configuration
@@ -585,7 +585,7 @@ Programmatically emit APDU events to connected clients:
 
 ```python
 import asyncio
-from gp_ota_tester.dashboard import DashboardServer, DashboardConfig
+from cardlink.dashboard import DashboardServer, DashboardConfig
 
 async def test_with_dashboard():
     config = DashboardConfig(port=8080)
@@ -621,8 +621,8 @@ Connect the dashboard to the PSK-TLS admin server for monitoring:
 
 ```python
 import asyncio
-from gp_ota_tester.server import AdminServer, ServerConfig
-from gp_ota_tester.dashboard import DashboardServer, DashboardConfig
+from cardlink.server import AdminServer, ServerConfig
+from cardlink.dashboard import DashboardServer, DashboardConfig
 
 async def main():
     # Start dashboard

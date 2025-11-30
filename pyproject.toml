@@ -3,7 +3,7 @@ requires = ["setuptools>=61.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "gp-ota-tester"
+name = "cardlink"
 version = "1.0.0"
 description = "GlobalPlatform Amendment B (SCP81) UICC Test Platform with mobile phone integration"
 readme = "README.md"
@@ -79,6 +79,19 @@ modem = [
 simulator = [
     "sslpsk3>=1.0",     # PSK-TLS support for client connections
 ]
+observability = [
+    "prometheus-client>=0.17.0",  # Metrics collection and exposure
+    "opentelemetry-api>=1.20.0",  # Distributed tracing API
+    "opentelemetry-sdk>=1.20.0",  # Tracing SDK
+    "opentelemetry-exporter-otlp>=1.20.0",  # OTLP exporter
+    "psutil>=5.9.0",  # System metrics
+]
+observability-jaeger = [
+    "opentelemetry-exporter-jaeger>=1.20.0",  # Jaeger trace exporter
+]
+observability-zipkin = [
+    "opentelemetry-exporter-zipkin>=1.20.0",  # Zipkin trace exporter
+]
 dev = [
     "pytest>=7.0",
     "pytest-cov>=4.0",
@@ -96,34 +109,34 @@ docs = [
     "mkdocstrings[python]>=0.24",
 ]
 all = [
-    "gp-ota-tester[psk,server,database,pcsc,phone,modem,simulator,dev,docs]",
+    "cardlink[psk,server,database,pcsc,phone,modem,simulator,observability,observability-jaeger,observability-zipkin,dev,docs]",
 ]
 
 [project.urls]
-Homepage = "https://github.com/yourusername/gp-ota-tester"
-Documentation = "https://yourusername.github.io/gp-ota-tester"
-Repository = "https://github.com/yourusername/gp-ota-tester.git"
-Issues = "https://github.com/yourusername/gp-ota-tester/issues"
+Homepage = "https://github.com/yourusername/cardlink"
+Documentation = "https://yourusername.github.io/cardlink"
+Repository = "https://github.com/yourusername/cardlink.git"
+Issues = "https://github.com/yourusername/cardlink/issues"
 
 [project.scripts]
-gp-ota-server = "gp_ota_tester.cli.server:main"
-gp-server = "gp_ota_tester.cli.server:main"
-gp-phone = "gp_ota_tester.cli.phone:main"
-gp-provision = "gp_ota_tester.cli.provision:main"
-gp-test = "gp_ota_tester.cli.test:main"
-gp-db = "gp_ota_tester.cli.db:main"
-gp-modem = "gp_ota_tester.cli.modem:main"
-gp-dashboard = "gp_ota_tester.cli.dashboard:main"
-gp-simulator = "gp_ota_tester.cli.simulator:main"
+gp-ota-server = "cardlink.cli.server:main"
+gp-server = "cardlink.cli.server:main"
+gp-phone = "cardlink.cli.phone:main"
+gp-provision = "cardlink.cli.provision:main"
+gp-test = "cardlink.cli.test:main"
+gp-db = "cardlink.cli.db:main"
+gp-modem = "cardlink.cli.modem:main"
+gp-dashboard = "cardlink.cli.dashboard:main"
+gp-simulator = "cardlink.cli.simulator:main"
 
-[project.entry-points."gp_ota_tester.plugins"]
+[project.entry-points."cardlink.plugins"]
 # Extensibility for custom assertions/handlers
 
 [tool.setuptools.packages.find]
 where = ["src"]
 
 [tool.setuptools.package-data]
-gp_ota_tester = [
+cardlink = [
     "py.typed",
     "data/*.yaml",
     "dashboard/static/**/*",
@@ -161,7 +174,7 @@ exclude = '''
 profile = "black"
 line_length = 100
 skip_gitignore = true
-known_first_party = ["gp_ota_tester"]
+known_first_party = ["cardlink"]
 sections = ["FUTURE", "STDLIB", "THIRDPARTY", "FIRSTPARTY", "LOCALFOLDER"]
 
 # ============================================================================

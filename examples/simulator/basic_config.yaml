@@ -1,0 +1,55 @@
+# Mobile Simulator - Basic Configuration
+# ==========================================
+# Simple configuration for local testing
+
+# Server connection settings
+server:
+  host: "127.0.0.1"
+  port: 8443
+  connect_timeout: 30.0
+  read_timeout: 30.0
+  retry_count: 3
+  retry_backoff:
+    - 1.0
+    - 2.0
+    - 4.0
+
+# PSK-TLS credentials
+psk:
+  identity: "test_card"
+  key: "00000000000000000000000000000000"  # 16-byte key in hex
+
+# Virtual UICC configuration
+uicc:
+  iccid: "8901234567890123456"
+  imsi: "310150123456789"
+  msisdn: "+14155551234"
+
+  # GlobalPlatform settings
+  gp:
+    version: "2.2.1"
+    scp_version: "03"
+    isd_aid: "A000000151000000"
+
+  # No pre-installed applets
+  applets: []
+
+# Simulation behavior - normal mode
+behavior:
+  mode: "normal"
+  response_delay_ms: 20
+
+  error:
+    rate: 0.0
+    codes: []
+
+  timeout:
+    probability: 0.0
+    delay_range:
+      min: 1000
+      max: 5000
+
+  connection:
+    mode: "single"
+    batch_size: 5
+    reconnect_after: 3

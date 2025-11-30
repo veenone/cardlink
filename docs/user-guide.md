@@ -144,7 +144,7 @@ gp-dashboard --help
 
 ```
 cardlink/
-├── src/gp_ota_tester/
+├── src/cardlink/
 │   ├── __init__.py           # Package version
 │   ├── cli/                   # CLI commands
 │   │   ├── server.py         # gp-server / gp-ota-server
@@ -461,7 +461,7 @@ gp-phone monitor ABC123456789
 
 ```python
 import asyncio
-from gp_ota_tester.phone import PhoneController
+from cardlink.phone import PhoneController
 
 async def main():
     # Create controller
@@ -484,7 +484,7 @@ asyncio.run(main())
 ### Example 4: UICC Provisioning (PC/SC)
 
 ```python
-from gp_ota_tester.provisioner import (
+from cardlink.provisioner import (
     PCSCClient, APDUInterface, SecureDomainManager,
     SCP02, SCPKeys
 )
@@ -524,7 +524,7 @@ client.disconnect()
 ### Example 5: Database Integration
 
 ```python
-from gp_ota_tester.database import DatabaseManager, DatabaseConfig
+from cardlink.database import DatabaseManager, DatabaseConfig
 
 # Configure database
 config = DatabaseConfig(url="sqlite:///data/cardlink.db")

@@ -3,7 +3,7 @@
 import pytest
 from datetime import datetime
 
-from gp_ota_tester.database import (
+from cardlink.database import (
     DatabaseConfig,
     DatabaseManager,
     Device,

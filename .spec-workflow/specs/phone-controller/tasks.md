@@ -14,7 +14,7 @@ _Requirements:_ 1, 2, 3, 4, 5, 6, 7, 8, 9, 10
 
 _Prompt:_ Role: Python backend developer | Task: Set up the phone controller module structure with __init__.py, models.py, and exceptions.py. Define all data models using Python dataclasses (DeviceProfile, SIMProfile, NetworkProfile, FullProfile, BIPEvent, ATResponse) and enums (DeviceState, BIPEventType). Create custom exception hierarchy (PhoneControllerError, ADBNotFoundError, DeviceNotFoundError, DeviceUnauthorizedError, ATCommandError, RootRequiredError, TimeoutError). | Restrictions: Follow Python packaging best practices, use absolute imports, use @dataclass decorator with type hints | Success: Module structure exists with all data models and exceptions defined, can be imported correctly
 
-- [x] 1.1. Create `src/gp_ota_tester/phone/` directory structure with `__init__.py`, `models.py`, and `exceptions.py` files
+- [x] 1.1. Create `src/cardlink/phone/` directory structure with `__init__.py`, `models.py`, and `exceptions.py` files
 - [x] 1.2. Implement DeviceProfile, SIMProfile, NetworkProfile, FullProfile, BIPEvent, ATResponse dataclasses and DeviceState, BIPEventType enums
 - [x] 1.3. Implement PhoneControllerError, ADBNotFoundError, DeviceNotFoundError, DeviceUnauthorizedError, ATCommandError, RootRequiredError, TimeoutError exception classes
 

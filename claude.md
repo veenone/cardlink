@@ -76,7 +76,7 @@ Protocol Layer
 
 ## Implementation Order
 
-### Phase 1: Protocol Layer (`src/gp_ota_tester/protocol/`)
+### Phase 1: Protocol Layer (`src/cardlink/protocol/`)
 
 **1.1 `apdu.py`** - APDU command/response (same as before)
 
@@ -170,7 +170,7 @@ def parse_terminal_response(data: bytes) -> dict:
     ...
 ```
 
-### Phase 2: Server (`src/gp_ota_tester/server/`)
+### Phase 2: Server (`src/cardlink/server/`)
 (Same as before, with mobile-optimized timeouts)
 
 ```python
@@ -180,7 +180,7 @@ DEFAULT_SESSION_TIMEOUT = 300  # 5 minutes for slow connections
 DEFAULT_CHUNK_SIZE = 1024  # MTU-friendly
 ```
 
-### Phase 3: Phone Controller (`src/gp_ota_tester/phone/`) ⭐ NEW
+### Phase 3: Phone Controller (`src/cardlink/phone/`) ⭐ NEW
 
 **3.1 `adb_controller.py`**
 ```python
@@ -679,7 +679,7 @@ class SMSTrigger:
             return False
 ```
 
-### Phase 4: UICC Provisioning (`src/gp_ota_tester/provision/`) ⭐ NEW
+### Phase 4: UICC Provisioning (`src/cardlink/provision/`) ⭐ NEW
 
 **4.1 `card_manager.py`**
 ```python
@@ -881,7 +881,7 @@ class URLConfig:
         return None
 ```
 
-### Phase 5: E2E Test Orchestrator (`src/gp_ota_tester/testing/`)
+### Phase 5: E2E Test Orchestrator (`src/cardlink/testing/`)
 
 **5.1 `e2e_orchestrator.py`**
 ```python

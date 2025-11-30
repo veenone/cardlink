@@ -412,7 +412,7 @@ class TestEnvironment:
 ```
 gp-ota-tester/
 ├── src/
-│   └── gp_ota_tester/
+│   └── cardlink/
 │       ├── __init__.py
 │       ├── cli/
 │       │   ├── __init__.py

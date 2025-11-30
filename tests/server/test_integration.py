@@ -15,7 +15,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from gp_ota_tester.server import (
+from cardlink.server import (
     AdminServer,
     APDUCommand,
     APDUResponse,
@@ -169,7 +169,7 @@ class TestSessionCreation:
         session_manager: SessionManager,
     ) -> None:
         """Test that invalid state transitions are rejected."""
-        from gp_ota_tester.server import InvalidStateTransition
+        from cardlink.server import InvalidStateTransition
 
         session = session_manager.create_session("192.168.1.100:12345")
 
@@ -267,7 +267,7 @@ class TestErrorHandling:
         )
 
         # Verify TLS alert returned
-        from gp_ota_tester.server import TLSAlert
+        from cardlink.server import TLSAlert
         assert alert == TLSAlert.DECRYPT_ERROR
 
         # Verify event emitted
@@ -333,7 +333,7 @@ class TestErrorHandling:
         mock_event_emitter: MockEventEmitter,
     ) -> None:
         """Test handshake timeout handling."""
-        from gp_ota_tester.server import HandshakeProgress, HandshakeState
+        from cardlink.server import HandshakeProgress, HandshakeState
 
         # Create partial handshake state
         partial_state = HandshakeProgress(
@@ -685,7 +685,7 @@ class TestHTTPHandler:
         http_handler: HTTPHandler,
     ) -> None:
         """Test invalid Content-Type header."""
-        from gp_ota_tester.server.http_handler import ContentTypeError
+        from cardlink.server.http_handler import ContentTypeError
 
         body = b"test"
         raw_request = (
@@ -776,3 +776,184 @@ class TestHTTPHandler:
         http_request_close = http_handler.parse_http_request(raw_request_close)
         admin_request_close = http_handler.parse_admin_request(http_request_close)
         assert admin_request_close.is_keep_alive is False
+
+
+# =============================================================================
+# GP Admin Header Tests (per GPC_SPE_011 Amendment B)
+# =============================================================================
+
+
+class TestGPAdminHeaders:
+    """Tests for GP Admin protocol headers per GPC_SPE_011."""
+
+    def test_response_includes_protocol_header(
+        self,
+        http_handler: HTTPHandler,
+    ) -> None:
+        """Test that responses include X-Admin-Protocol header."""
+        responses = [APDUResponse(sw1=0x90, sw2=0x00)]
+        http_response = http_handler.build_admin_response(responses)
+
+        assert "X-Admin-Protocol" in http_response.headers
+        assert http_response.headers["X-Admin-Protocol"] == "globalplatform-remote-admin/1.0"
+
+    def test_response_includes_next_uri_header(
+        self,
+        http_handler: HTTPHandler,
+    ) -> None:
+        """Test that responses include X-Admin-Next-URI header when provided."""
+        responses = [APDUResponse(sw1=0x90, sw2=0x00)]
+
+        # With next_uri
+        http_response = http_handler.build_admin_response(
+            responses,
+            next_uri="/admin/session/abc123"
+        )
+        assert "X-Admin-Next-URI" in http_response.headers
+        assert http_response.headers["X-Admin-Next-URI"] == "/admin/session/abc123"
+
+        # Without next_uri
+        http_response_no_uri = http_handler.build_admin_response(responses)
+        assert "X-Admin-Next-URI" not in http_response_no_uri.headers
+
+    def test_response_includes_targeted_application_header(
+        self,
+        http_handler: HTTPHandler,
+    ) -> None:
+        """Test that responses include X-Admin-Targeted-Application header when provided."""
+        responses = [APDUResponse(sw1=0x90, sw2=0x00)]
+
+        # With targeted_application
+        http_response = http_handler.build_admin_response(
+            responses,
+            targeted_application="A000000151000000"
+        )
+        assert "X-Admin-Targeted-Application" in http_response.headers
+        assert http_response.headers["X-Admin-Targeted-Application"] == "A000000151000000"
+
+        # Without targeted_application
+        http_response_no_target = http_handler.build_admin_response(responses)
+        assert "X-Admin-Targeted-Application" not in http_response_no_target.headers
+
+    def test_session_complete_response(
+        self,
+        http_handler: HTTPHandler,
+    ) -> None:
+        """Test HTTP 204 No Content response for session completion."""
+        http_response = http_handler.build_session_complete_response()
+
+        assert http_response.status_code == 204
+        assert http_response.body == b""
+        assert "X-Admin-Protocol" in http_response.headers
+        assert http_response.headers["X-Admin-Protocol"] == "globalplatform-remote-admin/1.0"
+        assert http_response.headers["Connection"] == "close"
+
+    def test_parse_gp_admin_headers_from_request(
+        self,
+        http_handler: HTTPHandler,
+    ) -> None:
+        """Test parsing GP Admin headers from client request."""
+        body = bytes([0x00, 0x04, 0x00, 0xA4, 0x04, 0x00])
+
+        raw_request = (
+            b"POST /admin HTTP/1.1\r\n"
+            b"Host: localhost:8443\r\n"
+            b"X-Admin-Protocol: globalplatform-remote-admin/1.0\r\n"
+            b"X-Admin-From: test_card_001\r\n"
+            b"X-Admin-Script-Status: ok\r\n"
+            b"Content-Type: application/vnd.globalplatform.card-content-mgt-response;version=1.0\r\n"
+            b"Content-Length: " + str(len(body)).encode() + b"\r\n"
+            b"\r\n"
+        ) + body
+
+        http_request = http_handler.parse_http_request(raw_request)
+        admin_request = http_handler.parse_admin_request(http_request)
+
+        assert admin_request.agent_id == "test_card_001"
+        assert admin_request.protocol_version == "globalplatform-remote-admin/1.0"
+        from cardlink.server.http_handler import ScriptStatus
+        assert admin_request.script_status == ScriptStatus.OK
+        assert admin_request.is_resume is False
+
+    def test_parse_script_status_error_values(
+        self,
+        http_handler: HTTPHandler,
+    ) -> None:
+        """Test parsing different script status values."""
+        from cardlink.server.http_handler import ScriptStatus
+
+        test_cases = [
+            ("ok", ScriptStatus.OK),
+            ("unknown-application", ScriptStatus.UNKNOWN_APPLICATION),
+            ("not-a-security-domain", ScriptStatus.NOT_A_SECURITY_DOMAIN),
+            ("security-error", ScriptStatus.SECURITY_ERROR),
+        ]
+
+        for status_str, expected_status in test_cases:
+            body = bytes([0x00, 0x04, 0x00, 0xA4, 0x04, 0x00])
+            raw_request = (
+                b"POST /admin HTTP/1.1\r\n"
+                b"Content-Type: application/vnd.globalplatform.card-content-mgt-response;version=1.0\r\n"
+                b"X-Admin-Script-Status: " + status_str.encode() + b"\r\n"
+                b"Content-Length: " + str(len(body)).encode() + b"\r\n"
+                b"\r\n"
+            ) + body
+
+            http_request = http_handler.parse_http_request(raw_request)
+            admin_request = http_handler.parse_admin_request(http_request)
+
+            assert admin_request.script_status == expected_status, f"Failed for {status_str}"
+
+    def test_parse_resume_header(
+        self,
+        http_handler: HTTPHandler,
+    ) -> None:
+        """Test parsing X-Admin-Resume header."""
+        body = bytes([0x00, 0x04, 0x00, 0xA4, 0x04, 0x00])
+
+        # With resume=true
+        raw_request = (
+            b"POST /admin HTTP/1.1\r\n"
+            b"Content-Type: application/vnd.globalplatform.card-content-mgt-response;version=1.0\r\n"
+            b"X-Admin-Resume: true\r\n"
+            b"Content-Length: " + str(len(body)).encode() + b"\r\n"
+            b"\r\n"
+        ) + body
+
+        http_request = http_handler.parse_http_request(raw_request)
+        admin_request = http_handler.parse_admin_request(http_request)
+
+        assert admin_request.is_resume is True
+
+        # Without resume header
+        raw_request_no_resume = (
+            b"POST /admin HTTP/1.1\r\n"
+            b"Content-Type: application/vnd.globalplatform.card-content-mgt-response;version=1.0\r\n"
+            b"Content-Length: " + str(len(body)).encode() + b"\r\n"
+            b"\r\n"
+        ) + body
+
+        http_request_no_resume = http_handler.parse_http_request(raw_request_no_resume)
+        admin_request_no_resume = http_handler.parse_admin_request(http_request_no_resume)
+
+        assert admin_request_no_resume.is_resume is False
+
+    def test_accepts_client_response_content_type(
+        self,
+        http_handler: HTTPHandler,
+    ) -> None:
+        """Test that server accepts R-APDU content type from client."""
+        body = bytes([0x00, 0x04, 0x00, 0xA4, 0x04, 0x00])
+
+        # Client sends R-APDU with response content type
+        raw_request = (
+            b"POST /admin HTTP/1.1\r\n"
+            b"Content-Type: application/vnd.globalplatform.card-content-mgt-response;version=1.0\r\n"
+            b"Content-Length: " + str(len(body)).encode() + b"\r\n"
+            b"\r\n"
+        ) + body
+
+        http_request = http_handler.parse_http_request(raw_request)
+        # Should not raise ContentTypeError
+        admin_request = http_handler.parse_admin_request(http_request)
+        assert admin_request is not None

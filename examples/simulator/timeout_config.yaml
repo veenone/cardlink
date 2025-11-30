@@ -1,0 +1,45 @@
+# Mobile Simulator - Timeout Simulation Configuration
+# ======================================================
+# Configuration for testing server timeout handling
+
+# Server connection settings
+server:
+  host: "127.0.0.1"
+  port: 8443
+  connect_timeout: 30.0
+  read_timeout: 30.0
+  retry_count: 3
+  retry_backoff: [1.0, 2.0, 4.0]
+
+# PSK-TLS credentials
+psk:
+  identity: "test_card_timeout"
+  key: "0102030405060708090A0B0C0D0E0F10"
+
+# Virtual UICC configuration
+uicc:
+  iccid: "8901234567890123456"
+  imsi: "310150123456789"
+
+  gp:
+    version: "2.2.1"
+    scp_version: "03"
+    isd_aid: "A000000151000000"
+
+# Simulation behavior - timeout simulation mode
+behavior:
+  mode: "timeout"
+  response_delay_ms: 20
+
+  error:
+    rate: 0.0
+
+  # Timeout simulation settings
+  timeout:
+    probability: 0.3  # 30% of responses will be delayed
+    delay_range:
+      min: 1000  # 1 second minimum delay
+      max: 5000  # 5 seconds maximum delay
+
+  connection:
+    mode: "single"

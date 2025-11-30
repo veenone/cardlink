@@ -12,7 +12,7 @@ _Leverage:_ Python package structure, dataclasses, type hints, exception inherit
 _Requirements:_ 1, 2, 3, 5, 8, 9
 _Prompt:_ Role: Python package architect | Task: Create modem controller module structure with models, exceptions, and dependencies for serial communication | Restrictions: Follow Python package conventions, use relative imports, use @dataclass decorator with type hints | Success: Module structure exists with all data models and exceptions defined, can be imported correctly
 
-- [x] 1.1. Create `src/gp_ota_tester/modem/` directory structure with `__init__.py`, `models.py`, `exceptions.py`, and `vendors/` subdirectory
+- [x] 1.1. Create `src/cardlink/modem/` directory structure with `__init__.py`, `models.py`, `exceptions.py`, and `vendors/` subdirectory
 - [x] 1.2. Implement dataclasses for ModemProfile, SIMProfile, NetworkProfile, FullModemProfile, ATResponse, ATResult, URCEvent, BIPEvent, and PortInfo
 - [x] 1.3. Implement exception hierarchy: ModemControllerError, ModemNotFoundError, SerialPortError, ATCommandError, ATTimeoutError, CMEError, CMSError with error code lookup
 - [x] 1.4. Add pyserial dependency to pyproject.toml with optional `[modem]` dependency group

@@ -14,7 +14,12 @@ This guide provides detailed instructions for setting up and running the PSK-TLS
 - [Running the Server](#running-the-server)
   - [Command Line Interface](#command-line-interface)
   - [Programmatic Usage](#programmatic-usage)
+  - [Database Integration for Session Persistence](#database-integration-for-session-persistence)
 - [Key Management](#key-management)
+- [Database-Backed Deployment](#database-backed-deployment)
+  - [Complete Server Setup with Database](#complete-server-setup-with-database)
+  - [Database Maintenance](#database-maintenance)
+  - [Production Deployment Checklist](#production-deployment-checklist)
 - [Security Considerations](#security-considerations)
 - [Troubleshooting](#troubleshooting)
 - [API Reference](#api-reference)
@@ -31,17 +36,27 @@ The PSK-TLS Admin Server implements the GlobalPlatform SCP81 specification for s
 - Multiple key store backends (file, memory, database)
 - Event emission for monitoring and logging
 - Thread-safe concurrent connection handling
+- PID file support for cross-process management
 
 ### Supported Cipher Suites
 
 | Cipher Suite | Security Level | Use Case |
 |--------------|----------------|----------|
-| `TLS_PSK_WITH_AES_128_CBC_SHA256` | Production | Recommended default |
-| `TLS_PSK_WITH_AES_256_CBC_SHA384` | Production | High security |
-| `TLS_PSK_WITH_AES_128_CBC_SHA` | Legacy | Compatibility |
-| `TLS_PSK_WITH_AES_256_CBC_SHA` | Legacy | Compatibility |
-| `TLS_PSK_WITH_NULL_SHA` | Testing Only | No encryption |
+| `TLS_PSK_WITH_AES_128_CBC_SHA256` | Production | Mandatory per GP spec |
+| `TLS_PSK_WITH_AES_256_CBC_SHA384` | Production | Recommended |
+| `TLS_PSK_WITH_AES_128_CBC_SHA` | Legacy | Backward compatibility |
+| `TLS_PSK_WITH_AES_256_CBC_SHA` | Legacy | Backward compatibility |
 | `TLS_PSK_WITH_NULL_SHA256` | Testing Only | No encryption |
+| `TLS_PSK_WITH_NULL_SHA` | Testing Only | No encryption |
+
+### Future TLS 1.3 Support
+
+The following TLS 1.3 cipher suites are defined per GP spec but require future sslpsk3 support:
+
+| Cipher Suite | Status |
+|--------------|--------|
+| `TLS_AES_128_CCM_SHA256` | Planned |
+| `TLS_AES_128_GCM_SHA256` | Planned |
 
 ---
 
@@ -58,7 +73,7 @@ The PSK-TLS Admin Server implements the GlobalPlatform SCP81 specification for s
 Install the base package and PSK-TLS support:
 
 ```bash
-pip install gp-ota-tester[psk]
+pip install cardlink[psk]
 ```
 
 This installs:
@@ -85,13 +100,13 @@ Expected output should list PSK cipher suites.
 
 ```bash
 # Basic installation
-pip install gp-ota-tester
+pip install cardlink
 
 # With PSK-TLS server support
-pip install gp-ota-tester[server]
+pip install cardlink[server]
 
 # Full installation with all features
-pip install gp-ota-tester[all]
+pip install cardlink[all]
 ```
 
 ### From Source
@@ -106,10 +121,10 @@ pip install -e ".[server]"
 
 ```bash
 # Check CLI is available
-gp-ota-server --help
+gp-server --help
 
 # Check PSK support
-python -c "from gp_ota_tester.server import HAS_PSK_SUPPORT; print(f'PSK Support: {HAS_PSK_SUPPORT}')"
+python -c "from cardlink.server import HAS_PSK_SUPPORT; print(f'PSK Support: {HAS_PSK_SUPPORT}')"
 ```
 
 ---
@@ -149,6 +164,8 @@ keys_file: "/path/to/keys.yaml"
 ciphers:
   enable_legacy: false
   enable_null_ciphers: false
+  enable_tls13: false  # Future: requires sslpsk3 TLS 1.3 support
+  max_fragment_length: null  # RFC 6066: 512, 1024, 2048, 4096, or null
 
 # Logging
 log_level: "INFO"
@@ -165,6 +182,7 @@ dashboard_port: 8080
 | `GP_OTA_SERVER_HOST` | Server bind address | `127.0.0.1` |
 | `GP_OTA_SERVER_PORT` | Server listen port | `8443` |
 | `GP_OTA_SERVER_CONFIG` | Path to config file | None |
+| `GP_OTA_SERVER_PID_FILE` | Path to PID file | `/tmp/gp-ota-server.pid` |
 
 #### ServerConfig Parameters
 
@@ -175,8 +193,13 @@ dashboard_port: 8080
 | `max_connections` | int | `100` | Maximum concurrent connections |
 | `session_timeout` | float | `300.0` | Session timeout in seconds |
 | `handshake_timeout` | float | `30.0` | TLS handshake timeout |
+| `read_timeout` | float | `30.0` | HTTP read timeout |
 | `backlog` | int | `5` | Socket listen backlog |
 | `thread_pool_size` | int | `10` | Worker thread count |
+| `enable_dashboard` | bool | `False` | Enable web dashboard |
+| `dashboard_port` | int | `8080` | Dashboard port |
+| `key_store_path` | str | `None` | Path to YAML key file |
+| `log_level` | str | `"INFO"` | Logging level |
 
 ---
 
@@ -215,7 +238,7 @@ Key requirements:
 For testing or dynamic key management:
 
 ```python
-from gp_ota_tester.server import MemoryKeyStore
+from cardlink.server import MemoryKeyStore
 
 key_store = MemoryKeyStore()
 key_store.add_key("test_identity", bytes.fromhex("0123456789ABCDEF"))
@@ -230,23 +253,62 @@ if key_store.identity_exists("another_card"):
 
 # List all identities
 identities = key_store.get_all_identities()
+
+# Clear all keys
+key_store.clear()
 ```
 
 #### Database Key Store
 
-For production deployments with database backend:
+For production deployments with persistent database backend:
 
 ```python
-from gp_ota_tester.server import DatabaseKeyStore
-from gp_ota_tester.database import CardRepository, get_session
+from cardlink.server import DatabaseKeyStore
+from cardlink.database.repositories import CardRepository
 
-# Create database session
-session = get_session()
-repository = CardRepository(session)
+# Create card repository with database session
+card_repo = CardRepository(session)
 
-# Create key store
-key_store = DatabaseKeyStore(repository)
+# Create database-backed key store
+key_store = DatabaseKeyStore(card_repo)
+
+# The key store reads PSK credentials from CardProfile records
+# Keys are encrypted at rest using Fernet encryption
 ```
+
+**Benefits of Database Key Store:**
+- Persistent storage across server restarts
+- Centralized key management with other card data
+- Automatic PSK key encryption at rest (Fernet AES-128)
+- Integration with card provisioning workflow
+- Audit trail through database events
+
+**Setting up Card Profiles with PSK Keys:**
+
+```python
+from cardlink.database import get_unit_of_work
+from cardlink.database.models import CardProfile
+
+# Create card profile with PSK credentials
+with get_unit_of_work() as uow:
+    profile = CardProfile(
+        name="Production Card 001",
+        psk_identity="card_8901234567890123456",
+        psk_key=bytes.fromhex("0123456789ABCDEF0123456789ABCDEF"),
+        admin_url="https://server.example.com:8443/admin"
+    )
+    uow.cards.add(profile)
+    uow.commit()
+
+    # PSK key is automatically encrypted before storage
+    # Retrieve for server use
+    key_store = DatabaseKeyStore(uow.cards)
+
+    # Key is automatically decrypted when accessed
+    key = key_store.get_key("card_8901234567890123456")
+```
+
+See [Database Layer Guide](database-guide.md) for complete database setup and management.
 
 ---
 
@@ -257,19 +319,19 @@ key_store = DatabaseKeyStore(repository)
 Secure cipher suites for production use:
 
 ```bash
-gp-ota-server start --ciphers production
+gp-server start --ciphers production
 ```
 
 Enables:
-- `TLS_PSK_WITH_AES_128_CBC_SHA256`
-- `TLS_PSK_WITH_AES_256_CBC_SHA384`
+- `TLS_PSK_WITH_AES_128_CBC_SHA256` (mandatory per GP spec)
+- `TLS_PSK_WITH_AES_256_CBC_SHA384` (recommended)
 
 #### Legacy Ciphers
 
 For compatibility with older clients:
 
 ```bash
-gp-ota-server start --ciphers legacy
+gp-server start --ciphers legacy
 ```
 
 Adds:
@@ -281,7 +343,7 @@ Adds:
 Enable all production and legacy ciphers:
 
 ```bash
-gp-ota-server start --ciphers all
+gp-server start --ciphers all
 ```
 
 #### NULL Ciphers (Testing Only)
@@ -289,12 +351,12 @@ gp-ota-server start --ciphers all
 For debugging without encryption (traffic is in plaintext):
 
 ```bash
-gp-ota-server start --enable-null-ciphers
+gp-server start --enable-null-ciphers
 ```
 
 Adds:
-- `TLS_PSK_WITH_NULL_SHA`
 - `TLS_PSK_WITH_NULL_SHA256`
+- `TLS_PSK_WITH_NULL_SHA`
 
 **WARNING**: NULL ciphers provide NO encryption. Use only in isolated test environments.
 
@@ -307,47 +369,68 @@ Adds:
 #### Start Server
 
 ```bash
-# Start with defaults (localhost:8443)
-gp-ota-server start --keys keys.yaml -f
+# Start with defaults (localhost:8443, foreground mode)
+gp-server start --keys keys.yaml -f
 
 # Start on all interfaces
-gp-ota-server start --host 0.0.0.0 --port 8443 --keys keys.yaml -f
+gp-server start --host 0.0.0.0 --port 8443 --keys keys.yaml -f
 
 # Start with configuration file
-gp-ota-server start --config server.yaml -f
+gp-server start --config server.yaml -f
 
 # Start with verbose logging
-gp-ota-server -v start --keys keys.yaml -f
+gp-server -v start --keys keys.yaml -f
 
 # Start with debug logging
-gp-ota-server --debug start --keys keys.yaml -f
+gp-server --debug start --keys keys.yaml -f
 
 # Start with legacy cipher support
-gp-ota-server start --keys keys.yaml --ciphers legacy -f
+gp-server start --keys keys.yaml --ciphers legacy -f
 
 # Start with custom connection limits
-gp-ota-server start --keys keys.yaml --max-connections 50 --session-timeout 600 -f
+gp-server start --keys keys.yaml --max-connections 50 --session-timeout 600 -f
+
+# Start in background (writes PID file)
+gp-server start --keys keys.yaml
 ```
 
 The `-f` (foreground) flag keeps the server running in the terminal. Press `Ctrl+C` to stop.
 
+Without `-f`, the server runs in background and uses PID file for management.
+
 #### Check Server Status
 
 ```bash
-gp-ota-server status
+gp-server status
 ```
+
+Output includes:
+- Running state
+- PID
+- Host and port (if running in-process)
+- Active connections and sessions (if running in-process)
 
 #### Stop Server
 
 ```bash
-# Graceful shutdown
-gp-ota-server stop
+# Graceful shutdown (SIGTERM)
+gp-server stop
 
-# Force immediate shutdown
-gp-ota-server stop --force
+# Force immediate shutdown (SIGKILL)
+gp-server stop --force
 
 # Custom timeout
-gp-ota-server stop --timeout 10
+gp-server stop --timeout 10
+```
+
+#### Validate Configuration
+
+```bash
+# Validate config file
+gp-server validate --config server.yaml
+
+# Validate config and keys
+gp-server validate --config server.yaml --keys keys.yaml
 ```
 
 ### Programmatic Usage
@@ -355,7 +438,7 @@ gp-ota-server stop --timeout 10
 #### Basic Server Setup
 
 ```python
-from gp_ota_tester.server import (
+from cardlink.server import (
     AdminServer,
     ServerConfig,
     CipherConfig,
@@ -367,7 +450,12 @@ from gp_ota_tester.server import (
 cipher_config = CipherConfig(
     enable_legacy=True,
     enable_null_ciphers=False,
+    enable_tls13=False,  # Future: requires sslpsk3 TLS 1.3 support
+    max_fragment_length=None,  # Use default 16384
 )
+
+# Validate cipher configuration
+cipher_config.validate()
 
 # Create server configuration
 config = ServerConfig(
@@ -376,8 +464,12 @@ config = ServerConfig(
     max_connections=100,
     session_timeout=300.0,
     handshake_timeout=30.0,
+    read_timeout=30.0,
     cipher_config=cipher_config,
 )
+
+# Validate server configuration
+config.validate()
 
 # Load PSK keys
 key_store = FileKeyStore("keys.yaml")
@@ -411,7 +503,7 @@ finally:
 #### Event Monitoring
 
 ```python
-from gp_ota_tester.server import (
+from cardlink.server import (
     EventEmitter,
     EVENT_SERVER_STARTED,
     EVENT_SERVER_STOPPED,
@@ -422,40 +514,62 @@ from gp_ota_tester.server import (
     EVENT_APDU_RECEIVED,
     EVENT_APDU_SENT,
     EVENT_PSK_MISMATCH,
+    EVENT_CONNECTION_INTERRUPTED,
+    EVENT_HIGH_ERROR_RATE,
 )
 
 # Create event emitter
 event_emitter = EventEmitter()
 
-# Register event handlers
-@event_emitter.on(EVENT_SERVER_STARTED)
+# Register event handlers using subscribe()
 def on_server_started(event_data):
     print(f"Server started: {event_data}")
 
-@event_emitter.on(EVENT_HANDSHAKE_COMPLETED)
 def on_handshake(event_data):
     print(f"TLS handshake completed:")
     print(f"  Client: {event_data['client_address']}")
     print(f"  Identity: {event_data['psk_identity']}")
     print(f"  Cipher: {event_data['cipher_suite']}")
 
-@event_emitter.on(EVENT_SESSION_STARTED)
 def on_session_started(event_data):
     print(f"New session: {event_data['session_id']}")
 
-@event_emitter.on(EVENT_APDU_RECEIVED)
 def on_apdu_received(event_data):
     print(f"APDU received: {event_data['apdu_hex']}")
 
-@event_emitter.on(EVENT_PSK_MISMATCH)
 def on_psk_mismatch(event_data):
     print(f"PSK mismatch for identity: {event_data['identity']}")
 
-# Start emitter
+def on_connection_interrupted(event_data):
+    print(f"Connection interrupted: {event_data}")
+
+def on_high_error_rate(event_data):
+    print(f"High error rate detected: {event_data}")
+
+# Subscribe to events
+event_emitter.subscribe(EVENT_SERVER_STARTED, on_server_started)
+event_emitter.subscribe(EVENT_HANDSHAKE_COMPLETED, on_handshake)
+event_emitter.subscribe(EVENT_SESSION_STARTED, on_session_started)
+event_emitter.subscribe(EVENT_APDU_RECEIVED, on_apdu_received)
+event_emitter.subscribe(EVENT_PSK_MISMATCH, on_psk_mismatch)
+event_emitter.subscribe(EVENT_CONNECTION_INTERRUPTED, on_connection_interrupted)
+event_emitter.subscribe(EVENT_HIGH_ERROR_RATE, on_high_error_rate)
+
+# Subscribe to ALL events using wildcard
+def log_all_events(event_data):
+    print(f"[{event_data['event_type']}] {event_data}")
+
+event_emitter.subscribe("*", log_all_events)
+
+# Start emitter before server
 event_emitter.start()
 
 # Use with server
 server = AdminServer(config, key_store, event_emitter)
+
+# When done, unsubscribe and stop
+# event_emitter.unsubscribe(subscription_id)
+# event_emitter.stop()
 ```
 
 #### Session Management
@@ -468,11 +582,153 @@ for session in sessions:
     print(f"  Client: {session.client_address}")
     print(f"  State: {session.state.value}")
     print(f"  Identity: {session.metadata.get('psk_identity')}")
+    print(f"  Duration: {session.get_duration_seconds():.2f}s")
+    print(f"  Commands: {session.command_count}")
+
+    # Get session summary
+    summary = session.get_summary()
+    print(f"  Summary: {summary}")
 
 # Get connection count
 print(f"Active connections: {server.get_connection_count()}")
 print(f"Active sessions: {server.get_session_count()}")
+
+# Access server components
+tls_handler = server.tls_handler
+session_manager = server.session_manager
+error_handler = server.error_handler
+command_processor = server.command_processor
+http_handler = server.http_handler
 ```
+
+#### Database Integration for Session Persistence
+
+The server can automatically persist sessions and communication logs to the database:
+
+```python
+from cardlink.server import AdminServer, ServerConfig
+from cardlink.database import get_unit_of_work
+from cardlink.database.models import OTASession, SessionStatus, CommLog, CommDirection
+
+# Create server with database integration
+uow = get_unit_of_work()
+server = AdminServer(config, key_store)
+
+# Track session mapping (external session ID -> database session ID)
+session_map = {}
+
+# Session lifecycle with database persistence
+def on_session_started(event_data):
+    """Create database record when session starts"""
+    with uow:
+        # Find device by PSK identity
+        device = uow.devices.get_by_iccid(event_data['psk_identity'])
+
+        if device:
+            # Create session record
+            session = OTASession(
+                device_id=device.id,
+                session_type="admin",
+                status=SessionStatus.IN_PROGRESS,
+                metadata={
+                    'client_ip': event_data['client_address'][0],
+                    'client_port': event_data['client_address'][1],
+                    'cipher_suite': event_data.get('cipher_suite'),
+                }
+            )
+            uow.sessions.add(session)
+            uow.commit()
+
+            # Track mapping
+            session_map[event_data['session_id']] = session.id
+
+def on_apdu_received(event_data):
+    """Log APDU exchange to database"""
+    external_id = event_data['session_id']
+    if external_id in session_map:
+        with uow:
+            log = CommLog(
+                session_id=session_map[external_id],
+                direction=CommDirection.RECEIVED,
+                apdu_command=bytes.fromhex(event_data['apdu_hex']),
+                timestamp=datetime.utcnow()
+            )
+            uow.logs.add(log)
+            uow.commit()
+
+def on_apdu_sent(event_data):
+    """Log APDU response to database"""
+    external_id = event_data['session_id']
+    if external_id in session_map:
+        with uow:
+            log = CommLog(
+                session_id=session_map[external_id],
+                direction=CommDirection.SENT,
+                apdu_response=bytes.fromhex(event_data['response_hex']),
+                duration_ms=event_data.get('duration_ms', 0),
+                timestamp=datetime.utcnow()
+            )
+            uow.logs.add(log)
+            uow.commit()
+
+def on_session_ended(event_data):
+    """Update session status when complete"""
+    external_id = event_data['session_id']
+    if external_id in session_map:
+        with uow:
+            session = uow.sessions.get(session_map[external_id])
+            if session:
+                session.status = SessionStatus.COMPLETED
+                session.completed_at = datetime.utcnow()
+                session.metadata['duration_seconds'] = event_data.get('duration', 0)
+                uow.sessions.update(session)
+                uow.commit()
+
+            # Clean up mapping
+            del session_map[external_id]
+
+# Subscribe handlers
+event_emitter.subscribe(EVENT_SESSION_STARTED, on_session_started)
+event_emitter.subscribe(EVENT_APDU_RECEIVED, on_apdu_received)
+event_emitter.subscribe(EVENT_APDU_SENT, on_apdu_sent)
+event_emitter.subscribe(EVENT_SESSION_ENDED, on_session_ended)
+```
+
+**Database Integration Benefits:**
+- Persistent session history across server restarts
+- Full APDU command/response audit trail
+- Performance metrics and analytics
+- Integration with test result tracking
+- Compliance and regulatory audit support
+
+**Querying Session History:**
+
+```python
+from cardlink.database import get_unit_of_work
+from datetime import datetime, timedelta
+
+with get_unit_of_work() as uow:
+    # Get recent sessions
+    recent_sessions = uow.sessions.find_recent(hours=24)
+
+    for session in recent_sessions:
+        print(f"Session {session.id}: {session.status.value}")
+        print(f"  Device: {session.device.iccid}")
+        print(f"  Started: {session.started_at}")
+
+        # Get communication logs for this session
+        logs = uow.logs.get_by_session(session.id)
+        print(f"  APDU exchanges: {len(logs)}")
+
+    # Get session statistics
+    stats = uow.sessions.get_stats(hours=24)
+    print(f"\n24-hour Statistics:")
+    print(f"  Total sessions: {stats['total']}")
+    print(f"  Completed: {stats['completed']}")
+    print(f"  Failed: {stats['failed']}")
+```
+
+See [Database Layer Guide](database-guide.md) for complete session management and querying capabilities.
 
 ---
 
@@ -546,10 +802,10 @@ key_store.reload()
 1. **Bind to specific interfaces**
    ```bash
    # Only localhost (development)
-   gp-ota-server start --host 127.0.0.1
+   gp-server start --host 127.0.0.1
 
    # Specific interface (production)
-   gp-ota-server start --host 192.168.1.100
+   gp-server start --host 192.168.1.100
    ```
 
 2. **Use firewall rules**
@@ -604,7 +860,7 @@ key_store.reload()
 pip install sslpsk3
 
 # Or install with server extras
-pip install gp-ota-tester[server]
+pip install cardlink[server]
 ```
 
 #### "Failed to bind to address"
@@ -615,7 +871,7 @@ lsof -i :8443
 netstat -tlnp | grep 8443
 
 # Use a different port
-gp-ota-server start --port 9443
+gp-server start --port 9443
 ```
 
 #### "Unknown PSK identity"
@@ -627,7 +883,7 @@ gp-ota-server start --port 9443
 
 2. Check key store is loaded:
    ```bash
-   gp-ota-server -v start --keys keys.yaml
+   gp-server -v start --keys keys.yaml
    ```
 
 3. Verify UICC PSK configuration matches
@@ -636,7 +892,7 @@ gp-ota-server start --port 9443
 
 1. Increase timeout:
    ```bash
-   gp-ota-server start --handshake-timeout 60
+   gp-server start --handshake-timeout 60
    ```
 
 2. Check network connectivity
@@ -646,11 +902,26 @@ gp-ota-server start --port 9443
 
 1. Enable legacy ciphers:
    ```bash
-   gp-ota-server start --ciphers all
+   gp-server start --ciphers all
    ```
 
 2. Check client supported ciphers
 3. Verify OpenSSL PSK support
+
+#### "Server is already running"
+
+The server uses PID files for cross-process management:
+
+```bash
+# Check if server is running
+gp-server status
+
+# Stop existing server first
+gp-server stop
+
+# Or force stop if stuck
+gp-server stop --force
+```
 
 ### Debug Logging
 
@@ -658,10 +929,10 @@ Enable verbose logging for troubleshooting:
 
 ```bash
 # Verbose mode
-gp-ota-server -v start --keys keys.yaml
+gp-server -v start --keys keys.yaml
 
 # Debug mode (very verbose)
-gp-ota-server --debug start --keys keys.yaml
+gp-server --debug start --keys keys.yaml
 ```
 
 ### Testing Connection
@@ -690,6 +961,7 @@ class ServerConfig:
     max_connections: int = 100
     session_timeout: float = 300.0
     handshake_timeout: float = 30.0
+    read_timeout: float = 30.0
     backlog: int = 5
     thread_pool_size: int = 10
     cipher_config: CipherConfig = field(default_factory=CipherConfig)
@@ -697,6 +969,9 @@ class ServerConfig:
     dashboard_port: int = 8080
     key_store_path: Optional[str] = None
     log_level: str = "INFO"
+
+    def validate(self) -> None:
+        """Validate configuration values. Raises ValueError if invalid."""
 ```
 
 ### CipherConfig
@@ -704,14 +979,29 @@ class ServerConfig:
 ```python
 @dataclass
 class CipherConfig:
+    # TLS 1.2 production ciphers (mandatory per GP spec)
     production_ciphers: List[str]  # AES-CBC-SHA256/384
+
+    # TLS 1.2 legacy ciphers (for backward compatibility)
     legacy_ciphers: List[str]      # AES-CBC-SHA
-    null_ciphers: List[str]        # NULL ciphers (testing)
+
+    # NULL ciphers for testing only (NO ENCRYPTION)
+    null_ciphers: List[str]        # NULL ciphers
+
+    # TLS 1.3 ciphers per GP spec (future support)
+    tls13_ciphers: List[str]       # AES-CCM/GCM
+
     enable_legacy: bool = False
     enable_null_ciphers: bool = False
+    enable_tls13: bool = False  # Not yet supported by sslpsk3
+
+    # Maximum Fragment Length per RFC 6066 and GP spec
+    # Valid values: 512, 1024, 2048, 4096, or None (default 16384)
+    max_fragment_length: Optional[int] = None
 
     def get_enabled_ciphers(self) -> List[str]: ...
     def get_openssl_cipher_string(self) -> str: ...
+    def validate(self) -> None: ...
 ```
 
 ### KeyStore (Abstract)
@@ -736,6 +1026,7 @@ class AdminServer:
         config: ServerConfig,
         key_store: KeyStore,
         event_emitter: Optional[EventEmitter] = None,
+        metrics_collector: Optional[Any] = None,
     ): ...
 
     def start(self) -> None: ...
@@ -744,9 +1035,76 @@ class AdminServer:
     @property
     def is_running(self) -> bool: ...
 
+    @property
+    def config(self) -> ServerConfig: ...
+
+    @property
+    def tls_handler(self) -> TLSHandler: ...
+
+    @property
+    def session_manager(self) -> SessionManager: ...
+
+    @property
+    def error_handler(self) -> ErrorHandler: ...
+
+    @property
+    def command_processor(self) -> GPCommandProcessor: ...
+
+    @property
+    def http_handler(self) -> HTTPHandler: ...
+
     def get_active_sessions(self) -> List[Session]: ...
     def get_session_count(self) -> int: ...
     def get_connection_count(self) -> int: ...
+```
+
+### EventEmitter
+
+```python
+class EventEmitter:
+    def __init__(self, queue_size: int = 1000): ...
+
+    def start(self) -> None: ...
+    def stop(self, timeout: float = 5.0) -> None: ...
+
+    def subscribe(
+        self,
+        event_type: str,
+        callback: Callable[[Dict[str, Any]], None],
+    ) -> str:
+        """Subscribe to an event type. Returns subscription ID."""
+
+    def unsubscribe(self, subscription_id: str) -> bool: ...
+
+    def emit(self, event_type: str, data: Optional[Dict[str, Any]] = None) -> None:
+        """Emit event asynchronously (queued)."""
+
+    def emit_sync(self, event_type: str, data: Optional[Dict[str, Any]] = None) -> None:
+        """Emit event synchronously (blocking)."""
+
+    def get_subscriber_count(self, event_type: Optional[str] = None) -> int: ...
+    def clear_subscriptions(self) -> None: ...
+```
+
+### Session
+
+```python
+@dataclass
+class Session:
+    session_id: str
+    state: SessionState
+    tls_info: Optional[TLSSessionInfo]
+    created_at: datetime
+    last_activity: datetime
+    apdu_exchanges: List[APDUExchange]
+    command_count: int
+    client_address: Optional[str]
+    close_reason: Optional[CloseReason]
+    metadata: Dict[str, Any]
+
+    def record_exchange(self, exchange: APDUExchange) -> None: ...
+    def get_duration_seconds(self) -> float: ...
+    def get_summary(self) -> Dict[str, Any]: ...
 ```
 
 ### Event Types
@@ -757,11 +1115,301 @@ class AdminServer:
 | `EVENT_SERVER_STOPPED` | Server stopped | reason, timestamp |
 | `EVENT_SESSION_STARTED` | New session created | session_id, client_address, psk_identity |
 | `EVENT_SESSION_ENDED` | Session closed | session_id, reason, duration |
-| `EVENT_HANDSHAKE_COMPLETED` | TLS handshake success | client_address, psk_identity, cipher_suite |
+| `EVENT_HANDSHAKE_COMPLETED` | TLS handshake success | client_address, psk_identity, cipher_suite, protocol_version, handshake_duration_ms |
 | `EVENT_HANDSHAKE_FAILED` | TLS handshake failed | client_address, error, alert |
 | `EVENT_APDU_RECEIVED` | APDU command received | session_id, apdu_hex |
 | `EVENT_APDU_SENT` | APDU response sent | session_id, response_hex, sw |
 | `EVENT_PSK_MISMATCH` | Unknown PSK identity | identity, client_address |
+| `EVENT_CONNECTION_INTERRUPTED` | Connection unexpectedly interrupted | session_id, error |
+| `EVENT_HIGH_ERROR_RATE` | Error rate threshold exceeded | rate, threshold |
+
+---
+
+## Database-Backed Deployment
+
+### Complete Server Setup with Database
+
+This section demonstrates a complete production deployment using the database layer for PSK key management, session persistence, and audit logging.
+
+#### Prerequisites
+
+```bash
+# Install with database support
+pip install cardlink[server,database]
+
+# Initialize database
+gp-db init
+
+# Run migrations
+gp-db migrate
+```
+
+#### Step 1: Configure Database
+
+```bash
+# Set database URL (PostgreSQL recommended for production)
+export DATABASE_URL="postgresql://user:pass@localhost:5432/cardlink"
+
+# Or use SQLite for simple deployments
+export DATABASE_URL="sqlite:///data/cardlink.db"
+
+# Verify database
+gp-db status
+```
+
+#### Step 2: Provision Card Profiles
+
+```python
+from cardlink.database import get_unit_of_work
+from cardlink.database.models import CardProfile, Device
+
+# Create Unit of Work
+with get_unit_of_work() as uow:
+    # Add devices
+    device1 = Device(
+        iccid="89012345678901234567",
+        imsi="123456789012345",
+        msisdn="+1234567890",
+        device_model="Test Phone 1"
+    )
+    uow.devices.add(device1)
+
+    # Create card profile with PSK credentials
+    profile1 = CardProfile(
+        name="Production Profile 001",
+        psk_identity="card_8901234567890123456",
+        psk_key=bytes.fromhex("0123456789ABCDEF0123456789ABCDEF"),
+        admin_url="https://192.168.1.100:8443/admin",
+        metadata={
+            'environment': 'production',
+            'operator': 'MNO_001'
+        }
+    )
+    uow.cards.add(profile1)
+
+    # Commit changes
+    uow.commit()
+
+    print(f"Created device: {device1.id}")
+    print(f"Created profile: {profile1.id}")
+```
+
+#### Step 3: Start Server with Database Integration
+
+```python
+#!/usr/bin/env python3
+"""Production server with database integration."""
+
+from cardlink.server import (
+    AdminServer,
+    ServerConfig,
+    CipherConfig,
+    DatabaseKeyStore,
+    EventEmitter,
+    EVENT_SESSION_STARTED,
+    EVENT_SESSION_ENDED,
+    EVENT_APDU_RECEIVED,
+    EVENT_APDU_SENT,
+)
+from cardlink.database import get_unit_of_work
+from cardlink.database.models import OTASession, SessionStatus, CommLog, CommDirection
+from datetime import datetime
+import logging
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
+
+# Database integration
+uow = get_unit_of_work()
+
+# Create event emitter
+event_emitter = EventEmitter()
+
+# Track session mapping (external session ID -> database session ID)
+session_map = {}
+
+# Event handlers for database persistence
+def on_session_started(event_data):
+    """Create database record when session starts."""
+    with uow:
+        # Find device by PSK identity
+        device = uow.devices.get_by_iccid(event_data['psk_identity'])
+
+        if device:
+            # Create session record
+            session = OTASession(
+                device_id=device.id,
+                session_type="admin",
+                status=SessionStatus.IN_PROGRESS,
+                metadata={
+                    'external_session_id': event_data['session_id'],
+                    'client_ip': event_data['client_address'][0],
+                    'client_port': event_data['client_address'][1],
+                }
+            )
+            uow.sessions.add(session)
+            uow.commit()
+
+            # Map external session ID to database ID
+            session_map[event_data['session_id']] = session.id
+
+            logger.info(f"Session {session.id} started for device {device.iccid}")
+
+def on_apdu_received(event_data):
+    """Log received APDU to database."""
+    external_id = event_data['session_id']
+    if external_id in session_map:
+        with uow:
+            log = CommLog(
+                session_id=session_map[external_id],
+                direction=CommDirection.RECEIVED,
+                apdu_command=bytes.fromhex(event_data['apdu_hex']),
+                timestamp=datetime.utcnow()
+            )
+            uow.logs.add(log)
+            uow.commit()
+
+def on_apdu_sent(event_data):
+    """Log sent APDU response to database."""
+    external_id = event_data['session_id']
+    if external_id in session_map:
+        with uow:
+            log = CommLog(
+                session_id=session_map[external_id],
+                direction=CommDirection.SENT,
+                apdu_response=bytes.fromhex(event_data['response_hex']),
+                duration_ms=event_data.get('duration_ms', 0),
+                timestamp=datetime.utcnow()
+            )
+            uow.logs.add(log)
+            uow.commit()
+
+def on_session_ended(event_data):
+    """Update session when complete."""
+    external_id = event_data['session_id']
+    if external_id in session_map:
+        with uow:
+            session = uow.sessions.get(session_map[external_id])
+            if session:
+                session.status = SessionStatus.COMPLETED
+                session.completed_at = datetime.utcnow()
+                uow.sessions.update(session)
+                uow.commit()
+
+            logger.info(f"Session {session.id} completed")
+
+            # Clean up mapping
+            del session_map[external_id]
+
+# Subscribe event handlers
+event_emitter.subscribe(EVENT_SESSION_STARTED, on_session_started)
+event_emitter.subscribe(EVENT_APDU_RECEIVED, on_apdu_received)
+event_emitter.subscribe(EVENT_APDU_SENT, on_apdu_sent)
+event_emitter.subscribe(EVENT_SESSION_ENDED, on_session_ended)
+
+# Start event emitter
+event_emitter.start()
+
+# Server configuration
+cipher_config = CipherConfig(
+    enable_legacy=False,
+    enable_null_ciphers=False,
+)
+
+config = ServerConfig(
+    host="0.0.0.0",
+    port=8443,
+    max_connections=500,
+    session_timeout=300.0,
+    handshake_timeout=30.0,
+    thread_pool_size=50,
+    cipher_config=cipher_config,
+    log_level="INFO",
+)
+
+# Create database-backed key store
+with uow:
+    key_store = DatabaseKeyStore(uow.cards)
+
+# Create and start server
+server = AdminServer(
+    config=config,
+    key_store=key_store,
+    event_emitter=event_emitter,
+)
+
+logger.info("Starting GP OTA Admin Server with database integration...")
+logger.info(f"Server: {config.host}:{config.port}")
+logger.info(f"Database: {uow.session.bind.url}")
+
+try:
+    server.start()
+    logger.info("Server started successfully")
+
+    # Keep running
+    import time
+    while server.is_running:
+        time.sleep(1)
+
+except KeyboardInterrupt:
+    logger.info("Shutting down...")
+finally:
+    server.stop()
+    event_emitter.stop()
+    logger.info("Server stopped")
+```
+
+#### Step 4: Monitor Sessions
+
+```bash
+# View active sessions
+gp-db stats
+
+# Export session data
+gp-db export sessions_$(date +%Y%m%d).yaml
+
+# View session logs
+python -c "
+from cardlink.database import get_unit_of_work
+
+with get_unit_of_work() as uow:
+    sessions = uow.sessions.find_recent(hours=1)
+    for s in sessions:
+        print(f'Session {s.id}: {s.status.value}')
+        logs = uow.logs.get_by_session(s.id)
+        print(f'  APDU count: {len(logs)}')
+"
+```
+
+### Database Maintenance
+
+```bash
+# Daily backup
+gp-db export --format yaml --output backup_$(date +%Y%m%d).yaml
+
+# Clean up old logs (keep 30 days)
+gp-db cleanup --days 30 --confirm
+
+# View statistics
+gp-db stats
+```
+
+### Production Deployment Checklist
+
+- [ ] Database initialized and migrated
+- [ ] Database backups configured
+- [ ] Card profiles provisioned with PSK credentials
+- [ ] Server config file created (no hardcoded keys)
+- [ ] Firewall rules configured
+- [ ] SSL/TLS certificates installed (if using reverse proxy)
+- [ ] Log rotation configured
+- [ ] Monitoring and alerting set up
+- [ ] Event handlers tested
+- [ ] Database cleanup scheduled
 
 ---
 
@@ -792,7 +1440,7 @@ max_connections: 500
 session_timeout: 300.0
 handshake_timeout: 30.0
 thread_pool_size: 50
-keys_file: "/etc/gp-ota-server/keys.yaml"
+keys_file: "/etc/cardlink/keys.yaml"
 log_level: "WARNING"
 
 ciphers:
