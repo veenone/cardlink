@@ -1,0 +1,100 @@
+# SMS OTA Trigger Scenario
+# This scenario tests sending SMS-PP triggers for OTA sessions.
+#
+# Prerequisites:
+#   - Network simulator running
+#   - UE registered to network
+#   - PSK-TLS server running on test PC
+#
+# Usage:
+#   cardlink-netsim run-scenario sms_trigger.yaml \
+#     --var imsi=001010123456789 \
+#     --var tar=B00001
+
+name: "SMS OTA Trigger Test"
+description: |
+  Sends an SMS-PP trigger to initiate an OTA admin session.
+  Verifies the SMS is delivered and the UE receives the trigger.
+
+tags:
+  - sms
+  - ota
+  - trigger
+
+variables:
+  imsi: "001010123456789"
+  tar: "B00001"                 # Toolkit Application Reference (hex)
+  wait_after_send: 5            # Seconds to wait after sending
+
+setup:
+  - name: "verify_ue_registered"
+    action: "ue.wait_for_registration"
+    params:
+      imsi: "${imsi}"
+      timeout: 15
+    timeout: 20
+    save_as: "ue_status"
+
+  - name: "check_registration"
+    action: "assert"
+    params:
+      condition: "${ue_status.registered}"
+      message: "UE must be registered to receive SMS"
+
+steps:
+  # Step 1: Log trigger info
+  - name: "log_trigger_start"
+    action: "log"
+    params:
+      message: "Sending OTA trigger to ${imsi} with TAR ${tar}"
+      level: "info"
+
+  # Step 2: Send OTA trigger SMS
+  - name: "send_trigger"
+    action: "sms.send_trigger"
+    params:
+      imsi: "${imsi}"
+      tar: "${tar}"
+    timeout: 15
+    save_as: "sms_result"
+    on_failure: "stop"
+
+  # Step 3: Verify trigger sent
+  - name: "verify_trigger_sent"
+    action: "assert"
+    params:
+      condition: "${sms_result}"
+      message: "OTA trigger should be sent successfully"
+
+  # Step 4: Log message ID
+  - name: "log_message_id"
+    action: "log"
+    params:
+      message: "OTA trigger sent, message ID: ${sms_result}"
+      level: "info"
+
+  # Step 5: Wait for trigger processing
+  - name: "wait_for_processing"
+    action: "wait"
+    params:
+      seconds: "${wait_after_send}"
+
+  # Step 6: Check UE still connected (trigger didn't crash)
+  - name: "verify_ue_still_registered"
+    action: "ue.get"
+    params:
+      imsi: "${imsi}"
+    save_as: "ue_after"
+
+  - name: "check_ue_active"
+    action: "assert"
+    params:
+      condition: "${ue_after.registered}"
+      message: "UE should remain registered after trigger"
+
+teardown:
+  - name: "log_complete"
+    action: "log"
+    params:
+      message: "SMS OTA trigger test completed"
+      level: "info"

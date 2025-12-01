@@ -1,0 +1,107 @@
+# Handover Test Scenario
+# Tests network-triggered handover during active session.
+#
+# Prerequisites:
+#   - Network simulator with multiple cells configured
+#   - UE registered to source cell
+#
+# Usage:
+#   cardlink-netsim run-scenario handover_test.yaml \
+#     --var imsi=001010123456789 \
+#     --var target_cell=2
+
+name: "Handover During Session Test"
+description: |
+  Tests UE behavior during handover:
+  1. Establish UE registration on source cell
+  2. Create data session
+  3. Trigger handover to target cell
+  4. Verify session continuity
+
+tags:
+  - handover
+  - mobility
+  - session-continuity
+
+variables:
+  imsi: "001010123456789"
+  source_cell: 1
+  target_cell: 2
+  stabilization_time: 3
+
+setup:
+  - name: "check_cell_status"
+    action: "cell.status"
+    save_as: "cell_info"
+
+  - name: "wait_ue_attach"
+    action: "ue.wait_for_registration"
+    params:
+      imsi: "${imsi}"
+      timeout: 30
+    save_as: "ue_before"
+    timeout: 35
+
+steps:
+  # Step 1: Verify initial state
+  - name: "log_initial_state"
+    action: "log"
+    params:
+      message: "UE ${imsi} on cell ${source_cell}, IP: ${ue_before.ip_address}"
+      level: "info"
+
+  # Step 2: Get active sessions before handover
+  - name: "list_sessions_before"
+    action: "session.list"
+    params:
+      imsi: "${imsi}"
+    save_as: "sessions_before"
+
+  # Step 3: Trigger handover
+  - name: "trigger_handover"
+    action: "trigger.handover"
+    params:
+      imsi: "${imsi}"
+      target_cell: "${target_cell}"
+    timeout: 20
+    save_as: "handover_result"
+    on_failure: "stop"
+
+  # Step 4: Wait for handover completion
+  - name: "wait_stabilization"
+    action: "wait"
+    params:
+      seconds: "${stabilization_time}"
+
+  # Step 5: Verify UE still registered
+  - name: "check_ue_after"
+    action: "ue.get"
+    params:
+      imsi: "${imsi}"
+    save_as: "ue_after"
+
+  - name: "assert_still_registered"
+    action: "assert"
+    params:
+      condition: "${ue_after.registered}"
+      message: "UE should remain registered after handover"
+
+  # Step 6: Check sessions preserved
+  - name: "list_sessions_after"
+    action: "session.list"
+    params:
+      imsi: "${imsi}"
+    save_as: "sessions_after"
+
+  - name: "log_handover_complete"
+    action: "log"
+    params:
+      message: "Handover completed. UE now on target cell."
+      level: "info"
+
+teardown:
+  - name: "final_log"
+    action: "log"
+    params:
+      message: "Handover test complete"
+      level: "info"

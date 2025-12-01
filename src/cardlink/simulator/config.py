@@ -141,6 +141,7 @@ class SimulatorConfig:
     # PSK credentials
     psk_identity: str = "test_card"
     psk_key: bytes = field(default_factory=lambda: b"\x00" * 16)
+    use_iccid_as_identity: bool = False
 
     # UICC profile
     uicc_profile: UICCProfile = field(default_factory=UICCProfile)
@@ -157,6 +158,21 @@ class SimulatorConfig:
     def psk_key_hex(self) -> str:
         """Get PSK key as hex string."""
         return self.psk_key.hex().upper()
+
+    @property
+    def effective_psk_identity(self) -> str:
+        """Get effective PSK identity.
+
+        Returns ICCID if use_iccid_as_identity is True, otherwise psk_identity.
+        This allows easy integration where ICCID is used as the PSK identity
+        for identifying the card in dashboard sessions.
+
+        Returns:
+            Effective PSK identity string.
+        """
+        if self.use_iccid_as_identity:
+            return self.uicc_profile.iccid
+        return self.psk_identity
 
     def validate(self) -> None:
         """Validate configuration values.
@@ -224,6 +240,9 @@ class SimulatorConfig:
             key_hex = psk_data.get("key", "")
             if key_hex:
                 data["psk_key"] = bytes.fromhex(key_hex)
+            # Support use_iccid_as_identity option
+            if "use_iccid_as_identity" in psk_data:
+                data["use_iccid_as_identity"] = psk_data["use_iccid_as_identity"]
 
         # Build applets list
         applets = []

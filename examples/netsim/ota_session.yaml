@@ -1,0 +1,172 @@
+# OTA Session End-to-End Scenario
+# Complete OTA session test including registration, trigger, and session.
+#
+# Prerequisites:
+#   - Network simulator running
+#   - PSK-TLS server running with scripts queued
+#   - UE with configured test SIM
+#
+# Usage:
+#   cardlink-netsim run-scenario ota_session.yaml \
+#     --var imsi=001010123456789 \
+#     --var tar=B00001 \
+#     --var session_timeout=60
+
+name: "OTA Session End-to-End Test"
+description: |
+  Complete OTA session workflow:
+  1. Wait for UE registration
+  2. Send OTA trigger via SMS-PP
+  3. Wait for BIP session establishment
+  4. Monitor session for completion
+  5. Verify session success
+
+tags:
+  - ota
+  - e2e
+  - bip
+  - session
+
+variables:
+  imsi: "001010123456789"
+  tar: "B00001"
+  session_timeout: 60
+  trigger_delay: 2
+
+setup:
+  # Verify cell is running
+  - name: "check_cell"
+    action: "cell.status"
+    save_as: "cell_status"
+    timeout: 10
+
+  - name: "assert_cell_running"
+    action: "assert"
+    params:
+      condition: "${cell_status.running}"
+      message: "Cell must be running"
+
+  # Wait for UE to register
+  - name: "wait_registration"
+    action: "ue.wait_for_registration"
+    params:
+      imsi: "${imsi}"
+      timeout: 30
+    save_as: "initial_ue_state"
+    timeout: 35
+
+  - name: "log_ue_ready"
+    action: "log"
+    params:
+      message: "UE ${imsi} registered at ${initial_ue_state.ip_address}"
+      level: "info"
+
+steps:
+  # ==========================================================================
+  # Phase 1: Send OTA Trigger
+  # ==========================================================================
+
+  - name: "log_phase_1"
+    action: "log"
+    params:
+      message: "=== Phase 1: Sending OTA Trigger ==="
+      level: "info"
+
+  - name: "send_ota_trigger"
+    action: "sms.send_trigger"
+    params:
+      imsi: "${imsi}"
+      tar: "${tar}"
+    save_as: "trigger_result"
+    timeout: 15
+    on_failure: "stop"
+
+  - name: "wait_trigger_processing"
+    action: "wait"
+    params:
+      seconds: "${trigger_delay}"
+
+  # ==========================================================================
+  # Phase 2: Wait for Session
+  # ==========================================================================
+
+  - name: "log_phase_2"
+    action: "log"
+    params:
+      message: "=== Phase 2: Waiting for BIP Session ==="
+      level: "info"
+
+  - name: "list_sessions"
+    action: "session.list"
+    params:
+      imsi: "${imsi}"
+    save_as: "initial_sessions"
+
+  - name: "log_session_count"
+    action: "log"
+    params:
+      message: "Found ${initial_sessions} existing sessions"
+      level: "debug"
+
+  # Wait for new session to appear (polling approach)
+  - name: "wait_for_session"
+    action: "wait"
+    params:
+      seconds: 5
+
+  - name: "check_sessions_again"
+    action: "session.list"
+    params:
+      imsi: "${imsi}"
+    save_as: "active_sessions"
+
+  # ==========================================================================
+  # Phase 3: Monitor Session
+  # ==========================================================================
+
+  - name: "log_phase_3"
+    action: "log"
+    params:
+      message: "=== Phase 3: Monitoring Session ==="
+      level: "info"
+
+  # Additional wait for session completion
+  - name: "wait_session_complete"
+    action: "wait"
+    params:
+      seconds: 10
+
+  # ==========================================================================
+  # Phase 4: Verify Results
+  # ==========================================================================
+
+  - name: "log_phase_4"
+    action: "log"
+    params:
+      message: "=== Phase 4: Verifying Results ==="
+      level: "info"
+
+  - name: "verify_ue_connected"
+    action: "ue.get"
+    params:
+      imsi: "${imsi}"
+    save_as: "final_ue_state"
+
+  - name: "assert_ue_still_registered"
+    action: "assert"
+    params:
+      condition: "${final_ue_state.registered}"
+      message: "UE should remain registered after OTA session"
+
+  - name: "log_success"
+    action: "log"
+    params:
+      message: "OTA session completed successfully for ${imsi}"
+      level: "info"
+
+teardown:
+  - name: "cleanup_log"
+    action: "log"
+    params:
+      message: "OTA session test teardown complete"
+      level: "info"

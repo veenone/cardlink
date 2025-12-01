@@ -335,6 +335,15 @@
   color: var(--text-secondary);
 }
 
+.session-item__client {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--text-tertiary);
+  background-color: var(--bg-tertiary);
+  padding: 0 var(--space-1);
+  border-radius: var(--radius-sm);
+}
+
 /* =============================================================================
    APDU Log Component
    ============================================================================= */
@@ -1475,4 +1484,215 @@
 [data-theme="dark"] .connection-status--connecting {
   color: var(--color-warning-300);
   background-color: rgba(245, 158, 11, 0.2);
+}
+
+/* =============================================================================
+   Simulator Panel Component
+   ============================================================================= */
+
+.simulator-panel {
+  background-color: var(--bg-secondary);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-primary);
+  margin: var(--space-3);
+}
+
+.simulator-panel__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-3);
+  cursor: pointer;
+  user-select: none;
+}
+
+.simulator-panel__header:hover {
+  background-color: var(--bg-hover);
+}
+
+.simulator-panel__title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-sm);
+  font-weight: var(--font-semibold);
+  color: var(--text-primary);
+  margin: 0;
+}
+
+.simulator-panel__title svg {
+  color: var(--text-secondary);
+}
+
+.simulator-panel__header-status {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.simulator-panel__toggle {
+  transition: transform var(--transition-fast);
+}
+
+.simulator-panel__toggle--collapsed {
+  transform: rotate(-90deg);
+}
+
+.simulator-panel__body {
+  padding: var(--space-3);
+  padding-top: 0;
+  border-top: 1px solid var(--border-primary);
+}
+
+.simulator-panel__body.hidden {
+  display: none;
+}
+
+/* Connect Form */
+.simulator-panel__connect {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.simulator-panel__field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.simulator-panel__input,
+.simulator-panel__select {
+  padding: var(--space-2);
+  font-size: var(--text-xs);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-sm);
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+}
+
+.simulator-panel__input--sm,
+.simulator-panel__select--sm {
+  padding: var(--space-1) var(--space-2);
+}
+
+.simulator-panel__input:focus,
+.simulator-panel__select:focus {
+  outline: none;
+  border-color: var(--border-focus);
+  box-shadow: 0 0 0 2px var(--color-primary-100);
+}
+
+/* Status Display */
+.simulator-panel__status {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.simulator-panel__status-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.simulator-panel__info {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.simulator-panel__info-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+/* Sections */
+.simulator-panel__section {
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--border-primary);
+}
+
+.simulator-panel__section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--space-2);
+}
+
+.simulator-panel__cell-actions {
+  display: flex;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+}
+
+/* UE List */
+.simulator-panel__ue-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.simulator-panel__ue-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-1) var(--space-2);
+  background-color: var(--bg-tertiary);
+  border-radius: var(--radius-sm);
+}
+
+.simulator-panel__ue-imsi {
+  font-family: var(--font-mono);
+  color: var(--text-primary);
+}
+
+/* SMS Form */
+.simulator-panel__sms {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+/* Empty/Unavailable States */
+.simulator-panel__empty,
+.simulator-panel__unavailable {
+  padding: var(--space-3);
+  text-align: center;
+  color: var(--text-tertiary);
+}
+
+.simulator-panel__unavailable {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.simulator-panel__icon {
+  width: 2rem;
+  height: 2rem;
+  color: var(--text-tertiary);
+}
+
+/* Badge Extensions */
+.badge--info {
+  color: var(--color-primary-700);
+  background-color: var(--color-primary-100);
+}
+
+[data-theme="dark"] .badge--info {
+  color: var(--color-primary-300);
+  background-color: rgba(59, 130, 246, 0.2);
+}
+
+.badge--xs {
+  padding: 0 var(--space-1);
+  font-size: 0.625rem;
+}
+
+.btn--xs {
+  padding: var(--space-1) var(--space-2);
+  font-size: var(--text-xs);
 }

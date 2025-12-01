@@ -241,8 +241,23 @@ behavior:
 |--------|-------------|--------|
 | `identity` | PSK identity string | String (must match server) |
 | `key` | PSK key | Hex string (16 or 32 bytes) |
+| `use_iccid_as_identity` | Use ICCID as PSK identity | Boolean (default: false) |
 
 **Important**: The PSK identity and key must match the server's configuration.
+
+**Using ICCID as PSK Identity**: When `use_iccid_as_identity` is enabled, the simulator uses the UICC profile's ICCID as the PSK identity. This is useful for:
+- Identifying sessions by card ICCID in the dashboard
+- Matching PSK credentials to specific card profiles
+- Simplifying key management in production environments
+
+```yaml
+psk:
+  key: "0102030405060708090A0B0C0D0E0F10"
+  use_iccid_as_identity: true  # Uses uicc.iccid as PSK identity
+
+uicc:
+  iccid: "8901234567890123456"  # This becomes the PSK identity
+```
 
 #### UICC Profile
 
@@ -582,16 +597,20 @@ For programmatic access to statistics:
 
 ```python
 import asyncio
-from cardlink.simulator import MobileSimulator, SimulatorConfig
+from cardlink.simulator import MobileSimulator, SimulatorConfig, UICCProfile
 
 async def monitor_session():
-    config = SimulatorConfig.from_dict({
-        "server": {"host": "127.0.0.1", "port": 8443},
-        "psk": {
-            "identity": "test_card",
-            "key": "0102030405060708090A0B0C0D0E0F10"
-        }
-    })
+    config = SimulatorConfig(
+        server_host="127.0.0.1",
+        server_port=8443,
+        psk_identity="test_card",
+        psk_key=bytes.fromhex("0102030405060708090A0B0C0D0E0F10"),
+        use_iccid_as_identity=True,  # Use ICCID as PSK identity
+        uicc_profile=UICCProfile(
+            iccid="8901234567890123456",
+            imsi="310150123456789"
+        )
+    )
 
     simulator = MobileSimulator(config)
     result = await simulator.run_complete_session()
@@ -600,6 +619,12 @@ async def monitor_session():
     print(f"Success: {result.success}")
     print(f"Duration: {result.duration_seconds:.2f}s")
     print(f"APDUs: {result.apdu_count}")
+
+    # Access ICCID and PSK identity from session result
+    summary = result.get_summary()
+    print(f"ICCID: {summary['iccid']}")
+    print(f"IMSI: {summary['imsi']}")
+    print(f"PSK Identity: {summary['psk_identity']}")
 
     # View APDU exchanges
     for exchange in result.exchanges:

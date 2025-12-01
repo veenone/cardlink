@@ -4,6 +4,7 @@ This module provides a web server for the dashboard frontend with:
 - Static file serving
 - REST API endpoints
 - WebSocket support for real-time updates
+- Network simulator integration
 
 Example:
     >>> from cardlink.dashboard import DashboardServer
@@ -22,6 +23,30 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Set
+
+# Import network simulator components (optional)
+try:
+    from cardlink.netsim import (
+        SimulatorManager,
+        SimulatorConfig,
+        SimulatorType,
+        SimulatorStatus,
+        TLSConfig,
+        UEInfo,
+        DataSession,
+        CellInfo,
+        NetworkEvent,
+        NotConnectedError,
+    )
+    NETSIM_AVAILABLE = True
+except ImportError:
+    NETSIM_AVAILABLE = False
+    SimulatorManager = None
+    SimulatorConfig = None
+    SimulatorType = None
+    SimulatorStatus = None
+    TLSConfig = None
+    NotConnectedError = Exception
 
 logger = logging.getLogger(__name__)
 
@@ -51,9 +76,18 @@ class Session:
     updated_at: datetime = field(default_factory=datetime.now)
     apdu_count: int = 0
     metadata: Dict[str, Any] = field(default_factory=dict)
+    psk_identity: Optional[str] = None
+    client_ip: Optional[str] = None
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary."""
+        # Include psk_identity and client_ip in metadata for frontend
+        metadata = dict(self.metadata)
+        if self.psk_identity:
+            metadata["psk_identity"] = self.psk_identity
+        if self.client_ip:
+            metadata["client_ip"] = self.client_ip
+
         return {
             "id": self.id,
             "name": self.name,
@@ -61,7 +95,9 @@ class Session:
             "createdAt": self.created_at.isoformat(),
             "updatedAt": self.updated_at.isoformat(),
             "apduCount": self.apdu_count,
-            "metadata": self.metadata,
+            "metadata": metadata,
+            "pskIdentity": self.psk_identity,
+            "clientIp": self.client_ip,
         }
 
 
@@ -100,12 +136,35 @@ class DashboardState:
         self.apdus: Dict[str, List[APDUEntry]] = {}  # session_id -> apdus
         self._lock = asyncio.Lock()
 
-    async def create_session(self, name: str, **metadata) -> Session:
-        """Create a new session."""
+    async def create_session(
+        self,
+        name: str,
+        psk_identity: Optional[str] = None,
+        client_ip: Optional[str] = None,
+        **metadata,
+    ) -> Session:
+        """Create a new session.
+
+        Args:
+            name: Session display name.
+            psk_identity: PSK identity (typically ICCID) for the connection.
+            client_ip: Client IP address.
+            **metadata: Additional metadata.
+
+        Returns:
+            Created session.
+        """
         async with self._lock:
+            # Use psk_identity as name if name is generic
+            display_name = name
+            if psk_identity and (not name or name.startswith("Session ")):
+                display_name = psk_identity
+
             session = Session(
                 id=str(uuid.uuid4()),
-                name=name,
+                name=display_name,
+                psk_identity=psk_identity,
+                client_ip=client_ip,
                 metadata=metadata,
             )
             self.sessions[session.id] = session
@@ -237,6 +296,11 @@ class DashboardServer:
         self._clients: Dict[str, WebSocketClient] = {}
         self._apdu_callbacks: List[Callable] = []
 
+        # Network simulator integration
+        self._simulator: Optional[SimulatorManager] = None
+        self._simulator_events: List[Dict[str, Any]] = []
+        self._max_events = 1000  # Max events to keep in memory
+
     async def start(self) -> None:
         """Start the server."""
         self._server = await asyncio.start_server(
@@ -353,9 +417,22 @@ class DashboardServer:
                 sessions = await self.state.get_sessions()
                 response = [s.to_dict() for s in sessions]
             elif method == "POST":
+                # Extract psk_identity and client_ip from request
+                psk_identity = data.get("pskIdentity") or data.get("psk_identity")
+                client_ip = data.get("clientIp") or data.get("client_ip")
+                metadata = data.get("metadata", {})
+
+                # Also check metadata for these fields
+                if not psk_identity:
+                    psk_identity = metadata.get("psk_identity") or metadata.get("pskIdentity")
+                if not client_ip:
+                    client_ip = metadata.get("client_ip") or metadata.get("clientIp")
+
                 session = await self.state.create_session(
                     name=data.get("name", f"Session {datetime.now().strftime('%H:%M:%S')}"),
-                    **data.get("metadata", {}),
+                    psk_identity=psk_identity,
+                    client_ip=client_ip,
+                    **metadata,
                 )
                 response = session.to_dict()
                 await self._broadcast("session.created", response)
@@ -428,7 +505,49 @@ class DashboardServer:
                 "status": "running",
                 "sessions": len(self.state.sessions),
                 "clients": len(self._clients),
+                "simulator_available": NETSIM_AVAILABLE,
+                "simulator_connected": self._simulator is not None and self._simulator.is_connected,
             }
+
+        # =====================================================================
+        # Network Simulator API
+        # =====================================================================
+
+        elif path == "/api/simulator/status":
+            if method == "GET":
+                response = await self._get_simulator_status()
+
+        elif path == "/api/simulator/connect":
+            if method == "POST":
+                response, status = await self._connect_simulator(data)
+
+        elif path == "/api/simulator/disconnect":
+            if method == "POST":
+                response, status = await self._disconnect_simulator()
+
+        elif path == "/api/simulator/ues":
+            if method == "GET":
+                response, status = await self._get_simulator_ues()
+
+        elif path == "/api/simulator/sessions":
+            if method == "GET":
+                response, status = await self._get_simulator_sessions()
+
+        elif path == "/api/simulator/events":
+            if method == "GET":
+                response = self._simulator_events[-100:]  # Last 100 events
+
+        elif path == "/api/simulator/cell/start":
+            if method == "POST":
+                response, status = await self._start_simulator_cell(data)
+
+        elif path == "/api/simulator/cell/stop":
+            if method == "POST":
+                response, status = await self._stop_simulator_cell()
+
+        elif path == "/api/simulator/sms/send":
+            if method == "POST":
+                response, status = await self._send_simulator_sms(data)
 
         else:
             status = 404
@@ -673,6 +792,275 @@ class DashboardServer:
             callback: Function to call when APDU is received.
         """
         self._apdu_callbacks.append(callback)
+
+    # =========================================================================
+    # Network Simulator API Implementation
+    # =========================================================================
+
+    async def _get_simulator_status(self) -> Dict[str, Any]:
+        """Get network simulator status."""
+        if not NETSIM_AVAILABLE:
+            return {
+                "available": False,
+                "connected": False,
+                "error": "Network simulator module not installed",
+            }
+
+        if self._simulator is None or not self._simulator.is_connected:
+            return {
+                "available": True,
+                "connected": False,
+                "ue_count": 0,
+                "session_count": 0,
+            }
+
+        try:
+            status = await self._simulator.get_status()
+            return {
+                "available": True,
+                "connected": status.connected,
+                "authenticated": status.authenticated,
+                "ue_count": status.ue_count,
+                "session_count": status.session_count,
+                "cell": status.cell.to_dict() if status.cell else None,
+                "error": status.error,
+            }
+        except Exception as e:
+            logger.error("Failed to get simulator status: %s", e)
+            return {
+                "available": True,
+                "connected": False,
+                "error": str(e),
+            }
+
+    async def _connect_simulator(
+        self, data: Dict[str, Any]
+    ) -> tuple[Dict[str, Any], int]:
+        """Connect to network simulator."""
+        if not NETSIM_AVAILABLE:
+            return {"error": "Network simulator module not installed"}, 400
+
+        if self._simulator is not None and self._simulator.is_connected:
+            return {"error": "Already connected to simulator"}, 400
+
+        # Get connection parameters
+        url = data.get("url")
+        if not url:
+            return {"error": "URL is required"}, 400
+
+        simulator_type_str = data.get("simulator_type", "amarisoft")
+        api_key = data.get("api_key")
+
+        # Parse simulator type
+        try:
+            simulator_type = SimulatorType(simulator_type_str.lower())
+        except ValueError:
+            return {"error": f"Unknown simulator type: {simulator_type_str}"}, 400
+
+        # Build TLS config if provided
+        tls_config = None
+        if data.get("tls"):
+            tls_data = data["tls"]
+            tls_config = TLSConfig(
+                verify_ssl=tls_data.get("verify_ssl", True),
+                ca_cert=tls_data.get("ca_cert"),
+                client_cert=tls_data.get("client_cert"),
+                client_key=tls_data.get("client_key"),
+            )
+
+        # Build config
+        config = SimulatorConfig(
+            url=url,
+            simulator_type=simulator_type,
+            api_key=api_key,
+            tls_config=tls_config,
+            auto_reconnect=data.get("auto_reconnect", True),
+            connect_timeout=data.get("connect_timeout", 30.0),
+        )
+
+        try:
+            # Create manager and connect
+            self._simulator = SimulatorManager(config)
+
+            # Register event handlers for broadcasting
+            self._simulator.events.on("simulator_connected", self._on_simulator_event)
+            self._simulator.events.on("simulator_disconnected", self._on_simulator_event)
+            self._simulator.events.on("simulator_error", self._on_simulator_event)
+            self._simulator.events.on("ue_registered", self._on_simulator_event)
+            self._simulator.events.on("ue_deregistered", self._on_simulator_event)
+            self._simulator.events.on("session_created", self._on_simulator_event)
+            self._simulator.events.on("session_released", self._on_simulator_event)
+            self._simulator.events.on("sms_sent", self._on_simulator_event)
+            self._simulator.events.on("sms_received", self._on_simulator_event)
+            self._simulator.events.on("cell_started", self._on_simulator_event)
+            self._simulator.events.on("cell_stopped", self._on_simulator_event)
+
+            await self._simulator.connect()
+
+            # Broadcast connection event
+            await self._broadcast("simulator.connected", {
+                "url": url,
+                "simulator_type": simulator_type.value,
+            })
+
+            return {
+                "success": True,
+                "url": url,
+                "simulator_type": simulator_type.value,
+            }, 200
+
+        except Exception as e:
+            logger.error("Failed to connect to simulator: %s", e)
+            self._simulator = None
+            return {"error": str(e)}, 500
+
+    async def _disconnect_simulator(self) -> tuple[Dict[str, Any], int]:
+        """Disconnect from network simulator."""
+        if self._simulator is None:
+            return {"error": "Not connected to simulator"}, 400
+
+        try:
+            await self._simulator.disconnect()
+            self._simulator = None
+
+            # Broadcast disconnection event
+            await self._broadcast("simulator.disconnected", {})
+
+            return {"success": True}, 200
+
+        except Exception as e:
+            logger.error("Failed to disconnect from simulator: %s", e)
+            return {"error": str(e)}, 500
+
+    async def _get_simulator_ues(self) -> tuple[Any, int]:
+        """Get list of UEs from simulator."""
+        if self._simulator is None or not self._simulator.is_connected:
+            return {"error": "Not connected to simulator"}, 400
+
+        try:
+            ues = await self._simulator.ue.list_ues()
+            return [ue.to_dict() for ue in ues], 200
+        except NotConnectedError:
+            return {"error": "Not connected to simulator"}, 400
+        except Exception as e:
+            logger.error("Failed to get UEs: %s", e)
+            return {"error": str(e)}, 500
+
+    async def _get_simulator_sessions(self) -> tuple[Any, int]:
+        """Get list of data sessions from simulator."""
+        if self._simulator is None or not self._simulator.is_connected:
+            return {"error": "Not connected to simulator"}, 400
+
+        try:
+            sessions = await self._simulator.sessions.list_sessions()
+            return [s.to_dict() for s in sessions], 200
+        except NotConnectedError:
+            return {"error": "Not connected to simulator"}, 400
+        except Exception as e:
+            logger.error("Failed to get sessions: %s", e)
+            return {"error": str(e)}, 500
+
+    async def _start_simulator_cell(
+        self, data: Dict[str, Any]
+    ) -> tuple[Dict[str, Any], int]:
+        """Start the simulated cell."""
+        if self._simulator is None or not self._simulator.is_connected:
+            return {"error": "Not connected to simulator"}, 400
+
+        try:
+            timeout = data.get("timeout", 60.0)
+            success = await self._simulator.cell.start(timeout=timeout)
+
+            if success:
+                await self._broadcast("simulator.cell_started", {})
+                return {"success": True}, 200
+            else:
+                return {"error": "Cell start timed out"}, 500
+
+        except NotConnectedError:
+            return {"error": "Not connected to simulator"}, 400
+        except Exception as e:
+            logger.error("Failed to start cell: %s", e)
+            return {"error": str(e)}, 500
+
+    async def _stop_simulator_cell(self) -> tuple[Dict[str, Any], int]:
+        """Stop the simulated cell."""
+        if self._simulator is None or not self._simulator.is_connected:
+            return {"error": "Not connected to simulator"}, 400
+
+        try:
+            success = await self._simulator.cell.stop()
+
+            if success:
+                await self._broadcast("simulator.cell_stopped", {})
+                return {"success": True}, 200
+            else:
+                return {"error": "Cell stop timed out"}, 500
+
+        except NotConnectedError:
+            return {"error": "Not connected to simulator"}, 400
+        except Exception as e:
+            logger.error("Failed to stop cell: %s", e)
+            return {"error": str(e)}, 500
+
+    async def _send_simulator_sms(
+        self, data: Dict[str, Any]
+    ) -> tuple[Dict[str, Any], int]:
+        """Send SMS via simulator."""
+        if self._simulator is None or not self._simulator.is_connected:
+            return {"error": "Not connected to simulator"}, 400
+
+        imsi = data.get("imsi")
+        if not imsi:
+            return {"error": "IMSI is required"}, 400
+
+        pdu = data.get("pdu")
+        text = data.get("text")
+
+        if not pdu and not text:
+            return {"error": "Either pdu or text is required"}, 400
+
+        try:
+            # Convert hex PDU to bytes if provided
+            pdu_bytes = bytes.fromhex(pdu) if pdu else None
+
+            message_id = await self._simulator.sms.send_mt_sms(
+                imsi=imsi,
+                pdu=pdu_bytes,
+                text=text,
+            )
+
+            await self._broadcast("simulator.sms_sent", {
+                "imsi": imsi,
+                "message_id": message_id,
+            })
+
+            return {"success": True, "message_id": message_id}, 200
+
+        except NotConnectedError:
+            return {"error": "Not connected to simulator"}, 400
+        except Exception as e:
+            logger.error("Failed to send SMS: %s", e)
+            return {"error": str(e)}, 500
+
+    async def _on_simulator_event(
+        self, event_name: str, data: Dict[str, Any]
+    ) -> None:
+        """Handle simulator events and broadcast to clients."""
+        # Store event
+        event_entry = {
+            "type": event_name,
+            "timestamp": datetime.now().isoformat(),
+            "data": data,
+        }
+        self._simulator_events.append(event_entry)
+
+        # Trim events if needed
+        if len(self._simulator_events) > self._max_events:
+            self._simulator_events = self._simulator_events[-self._max_events:]
+
+        # Broadcast to WebSocket clients
+        await self._broadcast(f"simulator.{event_name}", data)
 
 
 async def start_dashboard(

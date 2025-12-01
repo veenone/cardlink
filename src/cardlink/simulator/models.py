@@ -82,11 +82,14 @@ class TLSConnectionInfo:
         protocol_version: TLS protocol version.
         handshake_duration_ms: Time taken for handshake in milliseconds.
         server_address: Server IP address and port.
+        iccid: ICCID of the virtual UICC (if available).
+        imsi: IMSI of the virtual UICC (if available).
 
     Example:
         >>> info = TLSConnectionInfo(
         ...     cipher_suite="TLS_PSK_WITH_AES_128_CBC_SHA256",
         ...     psk_identity="test_card_001",
+        ...     iccid="8901234567890123456",
         ...     handshake_duration_ms=45.2
         ... )
     """
@@ -96,6 +99,13 @@ class TLSConnectionInfo:
     protocol_version: str = "TLSv1.2"
     handshake_duration_ms: float = 0.0
     server_address: Optional[str] = None
+    iccid: Optional[str] = None
+    imsi: Optional[str] = None
+
+    @property
+    def display_identity(self) -> str:
+        """Get display identity (ICCID preferred, then psk_identity)."""
+        return self.iccid or self.psk_identity
 
 
 @dataclass
@@ -185,6 +195,9 @@ class SessionResult:
             "final_sw": self.final_sw,
             "error": self.error,
             "cipher_suite": self.tls_info.cipher_suite if self.tls_info else None,
+            "psk_identity": self.tls_info.psk_identity if self.tls_info else None,
+            "iccid": self.tls_info.iccid if self.tls_info else None,
+            "imsi": self.tls_info.imsi if self.tls_info else None,
         }
 
 

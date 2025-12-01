@@ -51,6 +51,22 @@ const initialState = {
     autoScroll: true,
     commandBuilderOpen: true,
     selectedApduIndex: null,
+    simulatorPanelOpen: true,
+  },
+  // Network simulator state
+  simulator: {
+    available: false,
+    connected: false,
+    authenticated: false,
+    url: '',
+    simulatorType: '',
+    ueCount: 0,
+    sessionCount: 0,
+    cell: null,
+    error: null,
+    ues: [],
+    sessions: [],
+    events: [],
   },
 };
 

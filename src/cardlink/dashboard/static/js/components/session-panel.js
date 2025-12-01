@@ -35,12 +35,25 @@ export function createSessionPanel(listElement) {
 
     const statusClass = getStatusClass(session.status);
 
+    // Get display name: prefer psk_identity (ICCID), then name, then truncated ID
+    const pskIdentity = session.metadata?.psk_identity || session.metadata?.pskIdentity;
+    const displayName = pskIdentity || session.name || 'Session ' + session.id.slice(0, 8);
+
+    // Format ICCID for display (show last 8 digits if too long)
+    const formattedName = pskIdentity && pskIdentity.length > 20
+      ? '...' + pskIdentity.slice(-12)
+      : displayName;
+
+    // Show client IP if available
+    const clientInfo = session.metadata?.client_ip || session.metadata?.clientIp || '';
+
     item.innerHTML = `
       <div class="session-item__indicator session-item__indicator--${statusClass}" aria-hidden="true"></div>
       <div class="session-item__content">
-        <div class="session-item__name">${escapeHtml(session.name || 'Session ' + session.id.slice(0, 8))}</div>
+        <div class="session-item__name" title="${escapeHtml(pskIdentity || displayName)}">${escapeHtml(formattedName)}</div>
         <div class="session-item__meta">
           <span class="session-item__count">${session.apduCount || 0} APDUs</span>
+          ${clientInfo ? `<span class="session-item__client">${escapeHtml(clientInfo)}</span>` : ''}
           <span>${formatRelative(session.updatedAt || session.createdAt)}</span>
         </div>
       </div>

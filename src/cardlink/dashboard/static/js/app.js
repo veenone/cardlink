@@ -12,6 +12,7 @@ import { createModal } from './components/modal.js';
 import { createApduLog } from './components/apdu-log.js';
 import { createSessionPanel } from './components/session-panel.js';
 import { createCommandBuilder } from './components/command-builder.js';
+import { createSimulatorPanel } from './components/simulator-panel.js';
 import { debounce } from './utils/time.js';
 import { getTooltipController } from './utils/tooltip.js';
 
@@ -130,6 +131,12 @@ class DashboardApp {
       header: document.querySelector('.command-builder__header'),
       body: document.getElementById('command-builder-body'),
     });
+
+    // Simulator panel
+    const simulatorContainer = document.getElementById('simulator-panel-container');
+    if (simulatorContainer) {
+      this.components.simulatorPanel = createSimulatorPanel(simulatorContainer);
+    }
   }
 
   /**
@@ -280,6 +287,39 @@ class DashboardApp {
 
     wsClient.onMessage('session.deleted', (payload) => {
       state.removeSession(payload.id);
+    });
+
+    // Simulator events
+    wsClient.onMessage('simulator.connected', (payload) => {
+      this.components.simulatorPanel?.handleSimulatorEvent('simulator.connected', payload);
+    });
+
+    wsClient.onMessage('simulator.disconnected', (payload) => {
+      this.components.simulatorPanel?.handleSimulatorEvent('simulator.disconnected', payload);
+    });
+
+    wsClient.onMessage('simulator.ue_registered', (payload) => {
+      this.components.simulatorPanel?.handleSimulatorEvent('simulator.ue_registered', payload);
+    });
+
+    wsClient.onMessage('simulator.ue_deregistered', (payload) => {
+      this.components.simulatorPanel?.handleSimulatorEvent('simulator.ue_deregistered', payload);
+    });
+
+    wsClient.onMessage('simulator.cell_started', (payload) => {
+      this.components.simulatorPanel?.handleSimulatorEvent('simulator.cell_started', payload);
+    });
+
+    wsClient.onMessage('simulator.cell_stopped', (payload) => {
+      this.components.simulatorPanel?.handleSimulatorEvent('simulator.cell_stopped', payload);
+    });
+
+    wsClient.onMessage('simulator.sms_sent', (payload) => {
+      this.components.simulatorPanel?.handleSimulatorEvent('simulator.sms_sent', payload);
+    });
+
+    wsClient.onMessage('simulator.sms_received', (payload) => {
+      this.components.simulatorPanel?.handleSimulatorEvent('simulator.sms_received', payload);
     });
 
     // Connection events

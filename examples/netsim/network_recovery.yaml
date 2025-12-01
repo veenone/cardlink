@@ -1,0 +1,136 @@
+# Network Recovery Scenario
+# Tests UE recovery after network events (RLF, TAU).
+#
+# Prerequisites:
+#   - Network simulator running
+#   - UE registered
+#
+# Usage:
+#   cardlink-netsim run-scenario network_recovery.yaml \
+#     --var imsi=001010123456789
+
+name: "Network Recovery Test"
+description: |
+  Tests UE recovery scenarios:
+  1. Radio Link Failure (RLF) recovery
+  2. Tracking Area Update (TAU) handling
+  3. Detach and re-attach cycle
+
+tags:
+  - recovery
+  - rlf
+  - tau
+  - resilience
+
+variables:
+  imsi: "001010123456789"
+  recovery_timeout: 30
+  detach_cause: "reattach_required"
+
+setup:
+  - name: "initial_registration"
+    action: "ue.wait_for_registration"
+    params:
+      imsi: "${imsi}"
+      timeout: 30
+    save_as: "initial_state"
+    timeout: 35
+
+steps:
+  # ==========================================================================
+  # Test 1: Detach and Re-attach
+  # ==========================================================================
+
+  - name: "log_test_1"
+    action: "log"
+    params:
+      message: "=== Test 1: Detach and Re-attach ==="
+      level: "info"
+
+  - name: "trigger_detach"
+    action: "trigger.detach"
+    params:
+      imsi: "${imsi}"
+      cause: "${detach_cause}"
+    timeout: 15
+    save_as: "detach_result"
+
+  - name: "wait_detach"
+    action: "wait"
+    params:
+      seconds: 2
+
+  - name: "wait_reattach"
+    action: "ue.wait_for_registration"
+    params:
+      imsi: "${imsi}"
+      timeout: "${recovery_timeout}"
+    save_as: "after_reattach"
+    timeout: 35
+    on_failure: "continue"
+
+  - name: "check_reattach"
+    action: "assert"
+    params:
+      condition: "${after_reattach.registered}"
+      message: "UE should re-attach after detach"
+    on_failure: "continue"
+
+  # ==========================================================================
+  # Test 2: Paging Response
+  # ==========================================================================
+
+  - name: "log_test_2"
+    action: "log"
+    params:
+      message: "=== Test 2: Paging Response ==="
+      level: "info"
+
+  - name: "trigger_paging"
+    action: "trigger.paging"
+    params:
+      imsi: "${imsi}"
+      paging_type: "ps"
+    timeout: 10
+    save_as: "paging_result"
+    on_failure: "continue"
+
+  - name: "wait_paging_response"
+    action: "wait"
+    params:
+      seconds: 5
+
+  - name: "verify_after_paging"
+    action: "ue.get"
+    params:
+      imsi: "${imsi}"
+    save_as: "after_paging"
+
+  - name: "log_paging_result"
+    action: "log"
+    params:
+      message: "Paging test complete, UE registered: ${after_paging.registered}"
+      level: "info"
+
+  # ==========================================================================
+  # Final State Check
+  # ==========================================================================
+
+  - name: "final_check"
+    action: "ue.get"
+    params:
+      imsi: "${imsi}"
+    save_as: "final_state"
+
+  - name: "log_final_state"
+    action: "log"
+    params:
+      message: "Final state - Registered: ${final_state.registered}, IP: ${final_state.ip_address}"
+      level: "info"
+
+teardown:
+  - name: "cleanup"
+    action: "log"
+    params:
+      message: "Network recovery tests complete"
+      level: "info"

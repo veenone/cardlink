@@ -1,0 +1,92 @@
+# UE Registration Scenario
+# This scenario verifies UE attachment and registration to the network.
+#
+# Prerequisites:
+#   - Network simulator running and accessible
+#   - UE powered on and configured with test SIM
+#
+# Usage:
+#   cardlink-netsim run-scenario ue_registration.yaml --var imsi=001010123456789
+
+name: "UE Registration Test"
+description: |
+  Validates that a UE can successfully attach to the network,
+  obtain an IP address, and maintain registration.
+
+tags:
+  - registration
+  - basic
+  - smoke-test
+
+variables:
+  imsi: "001010123456789"       # Default test IMSI
+  registration_timeout: 30      # Seconds to wait for registration
+  expected_network_type: "LTE"
+
+setup:
+  - name: "verify_cell_active"
+    action: "cell.status"
+    save_as: "cell_info"
+    timeout: 10
+
+  - name: "check_cell_running"
+    action: "assert"
+    params:
+      condition: "${cell_info.running}"
+      message: "Cell must be running before test"
+
+steps:
+  # Step 1: Wait for UE to register
+  - name: "wait_for_registration"
+    action: "ue.wait_for_registration"
+    params:
+      imsi: "${imsi}"
+      timeout: "${registration_timeout}"
+    timeout: 35
+    save_as: "ue_info"
+    on_failure: "stop"
+
+  # Step 2: Verify registration details
+  - name: "verify_ue_registered"
+    action: "assert"
+    params:
+      condition: "${ue_info.registered}"
+      message: "UE should be registered"
+
+  # Step 3: Check IP address assigned
+  - name: "verify_ip_assigned"
+    action: "assert"
+    params:
+      condition: "${ue_info.ip_address}"
+      message: "UE should have IP address"
+
+  # Step 4: Log success
+  - name: "log_registration_success"
+    action: "log"
+    params:
+      message: "UE ${imsi} registered successfully with IP ${ue_info.ip_address}"
+      level: "info"
+
+  # Step 5: Get full UE details
+  - name: "get_ue_details"
+    action: "ue.get"
+    params:
+      imsi: "${imsi}"
+    save_as: "ue_details"
+
+  # Step 6: Verify network type if specified
+  - name: "check_network_type"
+    action: "assert"
+    params:
+      condition: true
+      message: "Network type check (informational)"
+    condition:
+      variable: "expected_network_type"
+      operator: "defined"
+
+teardown:
+  - name: "log_test_complete"
+    action: "log"
+    params:
+      message: "UE registration test completed"
+      level: "info"

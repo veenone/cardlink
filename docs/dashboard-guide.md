@@ -196,6 +196,31 @@ Displays all active test sessions:
 - **Session List**: Click to select a session and view its APDU log
 - **Refresh Button**: Manually refresh the session list
 - **Session Status**: Shows session state (idle, active, completed)
+- **ICCID Display**: Sessions display PSK identity/ICCID for easy identification
+- **Client IP**: Shows client IP address if available
+
+**Session Identification:**
+
+Sessions are displayed using the following priority:
+1. PSK Identity (typically ICCID when `use_iccid_as_identity` is enabled)
+2. Session name (if explicitly set)
+3. Truncated session ID (fallback)
+
+Long ICCIDs are truncated with `...` prefix, with full value shown on hover.
+
+```
+┌─────────────────────────┐
+│ Sessions       [↻]      │
+├─────────────────────────┤
+│ ● ...7890123456         │  ← ICCID (truncated, hover for full)
+│   12 APDUs  192.168.1.5 │  ← APDU count + client IP
+│   2 min ago             │
+├─────────────────────────┤
+│ ○ card_test_001         │  ← Short identity shown in full
+│   5 APDUs  192.168.1.10 │
+│   5 min ago             │
+└─────────────────────────┘
+```
 
 ### APDU Log (Main Content)
 
@@ -375,7 +400,12 @@ Response:
     "createdAt": "2024-01-15T10:00:00.000Z",
     "updatedAt": "2024-01-15T10:30:00.000Z",
     "apduCount": 42,
-    "metadata": {}
+    "pskIdentity": "8901234567890123456",
+    "clientIp": "192.168.1.50",
+    "metadata": {
+      "psk_identity": "8901234567890123456",
+      "client_ip": "192.168.1.50"
+    }
   }
 ]
 ```
@@ -385,9 +415,19 @@ Response:
 Create a new session.
 
 ```bash
+# Basic session
 curl -X POST http://localhost:8080/api/sessions \
   -H "Content-Type: application/json" \
   -d '{"name": "My Test Session"}'
+
+# Session with ICCID/PSK identity
+curl -X POST http://localhost:8080/api/sessions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Card Session",
+    "pskIdentity": "8901234567890123456",
+    "clientIp": "192.168.1.50"
+  }'
 ```
 
 **GET /api/sessions/{id}**
@@ -512,7 +552,13 @@ All messages use JSON format:
     "id": "session-uuid",
     "name": "New Session",
     "status": "idle",
-    "createdAt": "2024-01-15T10:00:00.000Z"
+    "createdAt": "2024-01-15T10:00:00.000Z",
+    "pskIdentity": "8901234567890123456",
+    "clientIp": "192.168.1.50",
+    "metadata": {
+      "psk_identity": "8901234567890123456",
+      "client_ip": "192.168.1.50"
+    }
   }
 }
 ```
@@ -569,9 +615,14 @@ async def main():
     # Create server
     server = DashboardServer(config)
 
-    # Create a test session
-    session = await server.state.create_session("Test Session")
+    # Create a test session with ICCID
+    session = await server.state.create_session(
+        name="Test Session",
+        psk_identity="8901234567890123456",  # ICCID or PSK identity
+        client_ip="192.168.1.50"
+    )
     print(f"Created session: {session.id}")
+    print(f"PSK Identity: {session.psk_identity}")
 
     # Start server (blocks until stopped)
     await server.start()

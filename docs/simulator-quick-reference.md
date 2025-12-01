@@ -88,6 +88,26 @@ behavior:
   mode: "normal"
 ```
 
+### Using ICCID as PSK Identity
+
+```yaml
+# Use ICCID as PSK identity for dashboard display
+server:
+  host: "127.0.0.1"
+  port: 8443
+
+psk:
+  key: "0102030405060708090A0B0C0D0E0F10"
+  use_iccid_as_identity: true  # ICCID becomes PSK identity
+
+uicc:
+  iccid: "8901234567890123456"  # Displayed in dashboard sessions
+  imsi: "310150123456789"
+
+behavior:
+  mode: "normal"
+```
+
 ## Common Options
 
 | Option | Description | Default |
@@ -95,6 +115,7 @@ behavior:
 | `--server HOST:PORT` | Server address | `127.0.0.1:8443` |
 | `--psk-identity ID` | PSK identity | `test_card` |
 | `--psk-key KEY` | PSK key (hex) | Required |
+| `--use-iccid` | Use ICCID as PSK identity | `false` |
 | `--config FILE` | Config file | None |
 | `--mode MODE` | Behavior mode | `normal` |
 | `--error-rate RATE` | Error rate (0.0-1.0) | `0.0` |
@@ -179,7 +200,7 @@ server:
 
 ```python
 import asyncio
-from cardlink.simulator import MobileSimulator, SimulatorConfig
+from cardlink.simulator import MobileSimulator, SimulatorConfig, UICCProfile
 
 async def main():
     config = SimulatorConfig(
@@ -187,6 +208,11 @@ async def main():
         server_port=8443,
         psk_identity="test_card",
         psk_key=bytes.fromhex("0102030405060708090A0B0C0D0E0F10"),
+        use_iccid_as_identity=True,  # Use ICCID as PSK identity
+        uicc_profile=UICCProfile(
+            iccid="8901234567890123456",
+            imsi="310150123456789"
+        )
     )
 
     simulator = MobileSimulator(config)
@@ -195,6 +221,11 @@ async def main():
     print(f"Success: {result.success}")
     print(f"APDUs: {result.apdu_count}")
     print(f"Final SW: {result.final_sw}")
+
+    # Access ICCID from session result
+    summary = result.get_summary()
+    print(f"ICCID: {summary['iccid']}")
+    print(f"PSK Identity: {summary['psk_identity']}")
 
 asyncio.run(main())
 ```

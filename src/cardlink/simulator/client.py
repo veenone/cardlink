@@ -142,11 +142,11 @@ class MobileSimulator:
 
         for attempt in range(self.config.retry_count + 1):
             try:
-                # Create TLS client
+                # Create TLS client (use effective_psk_identity for ICCID support)
                 self._tls_client = PSKTLSClient(
                     host=self.config.server_host,
                     port=self.config.server_port,
-                    psk_identity=self.config.psk_identity,
+                    psk_identity=self.config.effective_psk_identity,
                     psk_key=self.config.psk_key,
                     timeout=self.config.connect_timeout,
                 )
@@ -155,6 +155,11 @@ class MobileSimulator:
                 connection_start = time.monotonic()
                 self._connection_info = await self._tls_client.connect()
                 connection_time_ms = (time.monotonic() - connection_start) * 1000
+
+                # Add ICCID and IMSI from UICC profile to connection info
+                if self._connection_info:
+                    self._connection_info.iccid = self.config.uicc_profile.iccid
+                    self._connection_info.imsi = self.config.uicc_profile.imsi
 
                 # Create HTTP client
                 self._http_client = HTTPAdminClient(self._tls_client)
@@ -167,8 +172,19 @@ class MobileSimulator:
                 self._session_id = str(uuid.uuid4())
 
                 self._set_state(ConnectionState.CONNECTED)
+
+                # Log with ICCID for identification
+                iccid_display = self.config.uicc_profile.iccid
+                if len(iccid_display) > 12:
+                    iccid_display = f"...{iccid_display[-8:]}"
+
+                psk_display = self.config.effective_psk_identity
+                if len(psk_display) > 16:
+                    psk_display = f"...{psk_display[-12:]}"
+
                 logger.info(
                     f"Connected to {self.config.server_address} "
+                    f"[ICCID: {iccid_display}, PSK: {psk_display}] "
                     f"(session: {self._session_id[:8]}...)"
                 )
                 return True

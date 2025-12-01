@@ -312,6 +312,93 @@ export function createAPIClient(config = {}) {
     getConfig() {
       return this.get('/config');
     },
+
+    // =========================================================================
+    // Network Simulator Endpoints
+    // =========================================================================
+
+    /**
+     * Gets simulator status.
+     * @returns {Promise<Object>} Simulator status
+     */
+    getSimulatorStatus() {
+      return this.get('/simulator/status');
+    },
+
+    /**
+     * Connects to network simulator.
+     * @param {Object} config - Connection configuration
+     * @param {string} config.url - Simulator URL (ws:// or tcp://)
+     * @param {string} [config.simulator_type] - Simulator type (amarisoft, generic)
+     * @param {string} [config.api_key] - API key for authentication
+     * @param {Object} [config.tls] - TLS configuration
+     * @returns {Promise<Object>} Connection result
+     */
+    connectSimulator(config) {
+      return this.post('/simulator/connect', config);
+    },
+
+    /**
+     * Disconnects from network simulator.
+     * @returns {Promise<Object>} Disconnection result
+     */
+    disconnectSimulator() {
+      return this.post('/simulator/disconnect');
+    },
+
+    /**
+     * Gets list of UEs from simulator.
+     * @returns {Promise<Object[]>} UE list
+     */
+    getSimulatorUEs() {
+      return this.get('/simulator/ues');
+    },
+
+    /**
+     * Gets list of data sessions from simulator.
+     * @returns {Promise<Object[]>} Session list
+     */
+    getSimulatorSessions() {
+      return this.get('/simulator/sessions');
+    },
+
+    /**
+     * Gets simulator event history.
+     * @returns {Promise<Object[]>} Event list
+     */
+    getSimulatorEvents() {
+      return this.get('/simulator/events');
+    },
+
+    /**
+     * Starts the simulated cell.
+     * @param {Object} [options] - Start options
+     * @param {number} [options.timeout] - Timeout in seconds
+     * @returns {Promise<Object>} Start result
+     */
+    startSimulatorCell(options = {}) {
+      return this.post('/simulator/cell/start', options);
+    },
+
+    /**
+     * Stops the simulated cell.
+     * @returns {Promise<Object>} Stop result
+     */
+    stopSimulatorCell() {
+      return this.post('/simulator/cell/stop');
+    },
+
+    /**
+     * Sends SMS via simulator.
+     * @param {Object} smsData - SMS data
+     * @param {string} smsData.imsi - Target IMSI
+     * @param {string} [smsData.pdu] - SMS PDU in hex (for OTA)
+     * @param {string} [smsData.text] - Plain text message
+     * @returns {Promise<Object>} Send result
+     */
+    sendSimulatorSMS(smsData) {
+      return this.post('/simulator/sms/send', smsData);
+    },
   };
 }
 
