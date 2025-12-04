@@ -68,6 +68,7 @@ postgresql = [
 ]
 pcsc = [
     "pyscard>=2.0",     # PC/SC smart card interface (for provisioning)
+    "cryptography>=41.0",  # For SCP02/SCP03 secure channels
 ]
 phone = [
     "adb-shell>=0.4",   # Alternative ADB library (optional)
@@ -234,6 +235,7 @@ markers = [
 filterwarnings = [
     "error",
     "ignore::DeprecationWarning",
+    "ignore::cryptography.utils.CryptographyDeprecationWarning",
 ]
 
 # ============================================================================

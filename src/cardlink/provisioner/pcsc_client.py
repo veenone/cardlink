@@ -31,11 +31,11 @@ from typing import Callable, List, Optional, Union
 
 from cardlink.provisioner.atr_parser import ATRParser, parse_atr
 from cardlink.provisioner.exceptions import (
+    APDUError,
     CardNotFoundError,
     NotConnectedError,
     ProvisionerError,
     ReaderNotFoundError,
-    TransmitError,
 )
 from cardlink.provisioner.models import (
     APDUResponse,
@@ -368,7 +368,7 @@ class PCSCClient:
 
         Raises:
             NotConnectedError: If not connected to a card.
-            TransmitError: If transmission fails.
+            APDUError: If transmission fails.
         """
         # Convert to list of ints (required by pyscard)
         if isinstance(apdu, str):
@@ -386,7 +386,7 @@ class PCSCClient:
             try:
                 response, sw1, sw2 = self._connection.transmit(apdu_list)
             except Exception as e:
-                raise TransmitError(str(e), bytes(apdu_list).hex()) from e
+                raise APDUError(str(e), bytes(apdu_list).hex()) from e
 
             # Convert response to bytes
             data = bytes(response)
@@ -406,7 +406,7 @@ class PCSCClient:
                         f"GET RESPONSE: {data.hex().upper()} SW={sw1:02X}{sw2:02X}"
                     )
                 except Exception as e:
-                    raise TransmitError(f"GET RESPONSE failed: {e}") from e
+                    raise APDUError(f"GET RESPONSE failed: {e}") from e
 
             return APDUResponse(data=data, sw1=sw1, sw2=sw2)
 

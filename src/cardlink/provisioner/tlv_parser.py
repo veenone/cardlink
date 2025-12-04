@@ -453,6 +453,7 @@ class Tags:
     # GlobalPlatform
     GP_REGISTRY = 0xE3
     GP_AID = 0x4F
+    AID = 0x4F  # Alias for GP_AID
     GP_LIFECYCLE = 0xC5
     GP_PRIVILEGES = 0xC6
     GP_EXECUTABLE_AID = 0xC4

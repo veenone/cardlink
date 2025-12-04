@@ -644,6 +644,260 @@ class URLConfiguration:
             "path": self.path,
         }
 
+    def to_tlv(self) -> bytes:
+        """Encode URL to TLV format for card storage.
+
+        Returns:
+            TLV-encoded URL bytes.
+        """
+        from cardlink.provisioner.tlv_parser import TLVParser
+
+        url_bytes = self.url.encode("utf-8")
+        return TLVParser.build(0x80, url_bytes)
+
+
+# =============================================================================
+# Trigger Configuration Models
+# =============================================================================
+
+
+class TriggerType(Enum):
+    """OTA trigger types."""
+
+    SMS = "sms"  # SMS-PP trigger
+    POLL = "poll"  # Polling trigger
+    PUSH = "push"  # Server push trigger
+
+
+@dataclass
+class SMSTriggerConfig:
+    """SMS-PP trigger configuration.
+
+    Attributes:
+        tar: Toolkit Application Reference (3 bytes).
+        originating_address: SMS originating address/phone number.
+        kic: Key Identifier for Ciphering.
+        kid: Key Identifier for RC/CC/DS.
+        counter: Security counter (5 bytes).
+    """
+
+    tar: bytes  # 3 bytes
+    originating_address: str = ""
+    kic: bytes = b"\x00"  # No ciphering
+    kid: bytes = b"\x00"  # No redundancy check
+    counter: bytes = b"\x00\x00\x00\x00\x00"  # 5 bytes
+
+    def __post_init__(self):
+        """Validate field lengths."""
+        if len(self.tar) != 3:
+            raise ValueError(f"TAR must be 3 bytes, got {len(self.tar)}")
+        if len(self.counter) != 5:
+            raise ValueError(f"Counter must be 5 bytes, got {len(self.counter)}")
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary."""
+        return {
+            "tar": self.tar.hex(),
+            "originating_address": self.originating_address,
+            "kic": self.kic.hex(),
+            "kid": self.kid.hex(),
+            "counter": self.counter.hex(),
+        }
+
+
+@dataclass
+class PollTriggerConfig:
+    """Polling trigger configuration.
+
+    Attributes:
+        interval: Polling interval in seconds.
+        enabled: Whether polling is enabled.
+    """
+
+    interval: int = 3600  # Default: 1 hour
+    enabled: bool = False
+
+    def __post_init__(self):
+        """Validate interval."""
+        if self.interval < 60:
+            raise ValueError("Polling interval must be at least 60 seconds")
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary."""
+        return {
+            "interval": self.interval,
+            "enabled": self.enabled,
+        }
+
+
+@dataclass
+class TriggerConfiguration:
+    """Complete trigger configuration.
+
+    Attributes:
+        sms_trigger: SMS-PP trigger configuration.
+        poll_trigger: Polling trigger configuration.
+    """
+
+    sms_trigger: Optional[SMSTriggerConfig] = None
+    poll_trigger: Optional[PollTriggerConfig] = None
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary."""
+        return {
+            "sms_trigger": self.sms_trigger.to_dict() if self.sms_trigger else None,
+            "poll_trigger": self.poll_trigger.to_dict() if self.poll_trigger else None,
+        }
+
+
+# =============================================================================
+# BIP Configuration Models
+# =============================================================================
+
+
+class BearerType(IntEnum):
+    """Bearer types for BIP (Bearer Independent Protocol)."""
+
+    CSD = 0x01  # Circuit Switched Data
+    GPRS = 0x02  # GPRS/EDGE
+    DEFAULT = 0x03  # Default bearer
+    LOCAL_LINK = 0x04  # Local link (Bluetooth, IrDA, etc.)
+    UTRAN = 0x05  # UTRAN (3G)
+    EUTRAN = 0x0B  # E-UTRAN (LTE)
+    WIFI = 0x0C  # WiFi (TS 102 223 Rel-12+)
+
+
+@dataclass
+class BIPConfiguration:
+    """Bearer Independent Protocol configuration.
+
+    Attributes:
+        bearer_type: Type of bearer to use.
+        apn: Access Point Name (for packet-switched bearers).
+        buffer_size: Channel buffer size in bytes.
+        timeout: Connection timeout in seconds.
+        user_login: Optional user login for APN.
+        user_password: Optional user password for APN.
+    """
+
+    bearer_type: BearerType = BearerType.DEFAULT
+    apn: str = ""
+    buffer_size: int = 1400  # Default MTU-friendly size
+    timeout: int = 30  # Default 30 seconds
+    user_login: Optional[str] = None
+    user_password: Optional[str] = None
+
+    def __post_init__(self):
+        """Validate configuration."""
+        if self.buffer_size < 1 or self.buffer_size > 65535:
+            raise ValueError("Buffer size must be between 1 and 65535")
+        if self.timeout < 1:
+            raise ValueError("Timeout must be at least 1 second")
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary."""
+        return {
+            "bearer_type": self.bearer_type.name,
+            "apn": self.apn,
+            "buffer_size": self.buffer_size,
+            "timeout": self.timeout,
+            "user_login": self.user_login,
+            "user_password": "***" if self.user_password else None,
+        }
+
+    def to_tlv(self) -> bytes:
+        """Encode BIP configuration to TLV format.
+
+        Returns:
+            TLV-encoded BIP configuration.
+        """
+        from cardlink.provisioner.tlv_parser import TLVParser
+
+        # Build TLV structure
+        tlv_data = b""
+
+        # Bearer type (Tag 0x80)
+        tlv_data += TLVParser.build(0x80, bytes([self.bearer_type]))
+
+        # APN in DNS label format (Tag 0x81)
+        if self.apn:
+            apn_encoded = self._encode_apn(self.apn)
+            tlv_data += TLVParser.build(0x81, apn_encoded)
+
+        # Buffer size (Tag 0x82) - 2 bytes, big-endian
+        buffer_bytes = self.buffer_size.to_bytes(2, byteorder="big")
+        tlv_data += TLVParser.build(0x82, buffer_bytes)
+
+        # Timeout (Tag 0x83) - 1 byte in seconds
+        timeout_byte = min(self.timeout, 255).to_bytes(1, byteorder="big")
+        tlv_data += TLVParser.build(0x83, timeout_byte)
+
+        # User login (Tag 0x84) - optional
+        if self.user_login:
+            login_bytes = self.user_login.encode("utf-8")
+            tlv_data += TLVParser.build(0x84, login_bytes)
+
+        # User password (Tag 0x85) - optional
+        if self.user_password:
+            password_bytes = self.user_password.encode("utf-8")
+            tlv_data += TLVParser.build(0x85, password_bytes)
+
+        return tlv_data
+
+    @staticmethod
+    def _encode_apn(apn: str) -> bytes:
+        """Encode APN in DNS label format per RFC 1035.
+
+        DNS label format:
+        - Each label is preceded by its length byte
+        - Example: "internet.example.com" -> 0x08 "internet" 0x07 "example" 0x03 "com"
+
+        Args:
+            apn: APN string (e.g., "internet.example.com").
+
+        Returns:
+            DNS label encoded bytes.
+        """
+        if not apn:
+            return b""
+
+        labels = apn.split(".")
+        encoded = b""
+        for label in labels:
+            if not label or len(label) > 63:
+                raise ValueError(f"Invalid APN label: {label}")
+            encoded += bytes([len(label)]) + label.encode("ascii")
+
+        return encoded
+
+    @staticmethod
+    def _decode_apn(data: bytes) -> str:
+        """Decode APN from DNS label format.
+
+        Args:
+            data: DNS label encoded bytes.
+
+        Returns:
+            APN string.
+        """
+        if not data:
+            return ""
+
+        labels = []
+        i = 0
+        while i < len(data):
+            length = data[i]
+            if length == 0:
+                break
+            i += 1
+            if i + length > len(data):
+                raise ValueError("Invalid DNS label encoding")
+            label = data[i : i + length].decode("ascii")
+            labels.append(label)
+            i += length
+
+        return ".".join(labels)
+
 
 # =============================================================================
 # Event Models

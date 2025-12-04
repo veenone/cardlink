@@ -41,7 +41,6 @@ from cardlink.provisioner.exceptions import (
     ReaderNotFoundError,
     SecurityError,
     TLVError,
-    TransmitError,
 )
 
 from cardlink.provisioner.models import (
@@ -49,12 +48,15 @@ from cardlink.provisioner.models import (
     APDULogEntry,
     APDUResponse,
     ApplicationInfo,
+    BearerType,
+    BIPConfiguration,
     CardInfo,
     CardType,
     Convention,
     ATRInfo,
     INS,
     LifeCycleState,
+    PollTriggerConfig,
     Privilege,
     Protocol,
     ProvisionerEvent,
@@ -62,6 +64,9 @@ from cardlink.provisioner.models import (
     ReaderInfo,
     SCPKeys,
     SecurityDomainInfo,
+    SMSTriggerConfig,
+    TriggerConfiguration,
+    TriggerType,
     URLConfiguration,
 )
 
@@ -96,6 +101,12 @@ from cardlink.provisioner.secure_domain import (
 from cardlink.provisioner.scp02 import SCP02
 from cardlink.provisioner.scp03 import SCP03
 
+from cardlink.provisioner.key_manager import KeyManager
+from cardlink.provisioner.psk_config import PSKConfig
+from cardlink.provisioner.url_config import URLConfig
+from cardlink.provisioner.trigger_config import TriggerConfig
+from cardlink.provisioner.bip_config import BIPConfig
+
 
 __all__ = [
     # Exceptions
@@ -105,7 +116,6 @@ __all__ = [
     "NotConnectedError",
     "APDUError",
     "InvalidAPDUError",
-    "TransmitError",
     "AuthenticationError",
     "SecurityError",
     "ProfileError",
@@ -129,6 +139,12 @@ __all__ = [
     "SCPKeys",
     "PSKConfiguration",
     "URLConfiguration",
+    "TriggerType",
+    "SMSTriggerConfig",
+    "PollTriggerConfig",
+    "TriggerConfiguration",
+    "BearerType",
+    "BIPConfiguration",
     "ProvisionerEvent",
     # TLV
     "TLV",
@@ -151,4 +167,10 @@ __all__ = [
     # Secure Channels
     "SCP02",
     "SCP03",
+    # Configuration
+    "KeyManager",
+    "PSKConfig",
+    "URLConfig",
+    "TriggerConfig",
+    "BIPConfig",
 ]
