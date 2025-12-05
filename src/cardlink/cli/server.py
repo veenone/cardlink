@@ -151,10 +151,15 @@ def cli(ctx: click.Context, verbose: bool, debug: bool) -> None:
     else:
         log_level = logging.WARNING
 
+    # Configure logging - use force=True to reconfigure if already set up
     logging.basicConfig(
         level=log_level,
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+        force=True,  # Python 3.8+ - reconfigure even if already set up
     )
+
+    # Also set root logger level explicitly for compatibility
+    logging.root.setLevel(log_level)
 
     # Store in context
     ctx.ensure_object(dict)
