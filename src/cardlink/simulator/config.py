@@ -118,6 +118,7 @@ class SimulatorConfig:
         read_timeout: Read timeout in seconds.
         retry_count: Number of connection retry attempts.
         retry_backoff: Backoff delays between retries in seconds.
+        enable_null_ciphers: Enable NULL cipher suites (NO ENCRYPTION - testing only).
         uicc_profile: Virtual UICC profile configuration.
         behavior: Simulation behavior configuration.
 
@@ -142,6 +143,9 @@ class SimulatorConfig:
     psk_identity: str = "test_card"
     psk_key: bytes = field(default_factory=lambda: b"\x00" * 16)
     use_iccid_as_identity: bool = False
+
+    # Cipher configuration
+    enable_null_ciphers: bool = False
 
     # UICC profile
     uicc_profile: UICCProfile = field(default_factory=UICCProfile)
@@ -243,6 +247,11 @@ class SimulatorConfig:
             # Support use_iccid_as_identity option
             if "use_iccid_as_identity" in psk_data:
                 data["use_iccid_as_identity"] = psk_data["use_iccid_as_identity"]
+
+        # Handle cipher configuration
+        cipher_data = data.pop("cipher", {})
+        if cipher_data:
+            data["enable_null_ciphers"] = cipher_data.get("enable_null_ciphers", False)
 
         # Build applets list
         applets = []

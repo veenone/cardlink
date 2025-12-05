@@ -786,6 +786,69 @@ ImportError: No module named 'sslpsk'
 
 ## Advanced Usage
 
+### Protocol Debugging with NULL Ciphers
+
+For protocol debugging and traffic inspection, you can enable NULL cipher suites that transmit data without encryption. This is useful for analyzing the raw protocol data with tools like Wireshark.
+
+**⚠️ WARNING**: NULL ciphers provide NO ENCRYPTION. Only use in isolated test environments!
+
+#### CLI Usage
+
+```bash
+# Enable NULL ciphers for debugging
+gp-simulator run \
+  --server 127.0.0.1:8443 \
+  --psk-identity test_card \
+  --psk-key 0102030405060708090A0B0C0D0E0F10 \
+  --enable-null-ciphers
+```
+
+#### YAML Configuration
+
+```yaml
+# simulator-debug.yaml
+server:
+  host: "127.0.0.1"
+  port: 8443
+
+psk:
+  identity: "test_card"
+  key: "0102030405060708090A0B0C0D0E0F10"
+
+cipher:
+  enable_null_ciphers: true  # Enable NULL ciphers (NO ENCRYPTION!)
+
+behavior:
+  mode: "normal"
+```
+
+Run with:
+
+```bash
+gp-simulator run --config simulator-debug.yaml
+```
+
+**Note**: The server must also have NULL ciphers enabled:
+
+```bash
+gp-server start --port 8443 --enable-null-ciphers
+```
+
+#### Wireshark Traffic Capture
+
+With NULL ciphers enabled, you can capture and inspect the protocol:
+
+1. Start Wireshark and begin capturing on loopback (127.0.0.1)
+2. Filter for PSK-TLS traffic: `tcp.port == 8443`
+3. Run simulator with `--enable-null-ciphers`
+4. Wireshark will show plaintext APDU exchanges
+
+This is extremely useful for:
+- Protocol verification
+- Debugging command/response sequences
+- Testing client implementations
+- Educational demonstrations
+
 ### Custom UICC Profiles
 
 Create custom virtual UICC configurations:

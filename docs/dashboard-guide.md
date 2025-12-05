@@ -63,6 +63,9 @@ pip install -e ".[all]"
 # Start with default settings (localhost:8080)
 gp-dashboard start
 
+# If port 8080 is blocked, use a different port
+gp-dashboard start --port 8081
+
 # Start on specific host and port
 gp-dashboard start --host 0.0.0.0 --port 3000
 
@@ -70,12 +73,25 @@ gp-dashboard start --host 0.0.0.0 --port 3000
 gp-dashboard start --open
 ```
 
+**Common Port Issues on Windows:**
+
+If you see error `[Errno 13] error while attempting to bind... access forbidden`:
+- Port 8080 may be blocked by Windows or already in use
+- Try a different port: `--port 8081`, `--port 8082`, or any port above 1024
+- Check Windows port exclusions: `netsh interface ipv4 show excludedportrange protocol=tcp`
+
 ### 2. Access the Dashboard
 
 Open your web browser and navigate to:
 
 ```
 http://localhost:8080
+```
+
+Or use the port you specified:
+
+```
+http://localhost:8081
 ```
 
 ### 3. Connect to Test Sessions
@@ -707,7 +723,30 @@ asyncio.run(main())
 
 ### Dashboard won't start
 
-**Port already in use:**
+**Port blocked on Windows (Errno 13):**
+
+Error: `[Errno 13] error while attempting to bind on address ('127.0.0.1', 8080): an attempt was made to access a socket in a way forbidden by its access permissions`
+
+**Solution:**
+```bash
+# Try a different port
+gp-dashboard start --port 8081
+gp-dashboard start --port 8082
+gp-dashboard start --port 9000
+
+# Check Windows excluded port ranges
+netsh interface ipv4 show excludedportrange protocol=tcp
+
+# Check what's using the port
+netstat -ano | findstr :8080
+```
+
+**Common Causes:**
+- Port 8080 is in Windows dynamic port exclusion range
+- Port is already in use by another application (IIS, Docker, etc.)
+- Hyper-V or WSL2 may reserve certain port ranges
+
+**Port already in use (Linux/macOS):**
 ```bash
 # Check what's using the port
 lsof -i :8080

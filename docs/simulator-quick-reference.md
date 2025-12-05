@@ -72,6 +72,18 @@ gp-simulator run \
   --timeout-probability 0.3
 ```
 
+### Protocol Debugging (NULL Ciphers)
+```bash
+# Enable NULL ciphers for protocol debugging (NO ENCRYPTION!)
+gp-simulator run \
+  --server 127.0.0.1:8443 \
+  --psk-identity test_card \
+  --psk-key 0102030405060708090A0B0C0D0E0F10 \
+  --enable-null-ciphers
+```
+
+**⚠️ WARNING**: Only use in isolated test environments. Server must also enable NULL ciphers with `--enable-null-ciphers`.
+
 ## Configuration Template
 
 ```yaml
@@ -153,6 +165,21 @@ behavior:
     delay_range:
       min: 1000  # 1 second
       max: 5000  # 5 seconds
+```
+
+### NULL Ciphers (Debugging)
+```yaml
+# Enable NULL ciphers for protocol debugging (NO ENCRYPTION!)
+cipher:
+  enable_null_ciphers: true  # WARNING: Only for isolated test environments!
+
+psk:
+  identity: "test_card"
+  key: "0102030405060708090A0B0C0D0E0F10"
+
+server:
+  host: "127.0.0.1"
+  port: 8443
 ```
 
 ## Status Codes

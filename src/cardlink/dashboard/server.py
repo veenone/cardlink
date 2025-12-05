@@ -303,11 +303,25 @@ class DashboardServer:
 
     async def start(self) -> None:
         """Start the server."""
-        self._server = await asyncio.start_server(
-            self._handle_connection,
-            self.config.host,
-            self.config.port,
-        )
+        try:
+            self._server = await asyncio.start_server(
+                self._handle_connection,
+                self.config.host,
+                self.config.port,
+            )
+        except OSError as e:
+            if e.errno == 10013:  # Windows: Access forbidden
+                raise OSError(
+                    f"Cannot bind to {self.config.host}:{self.config.port}. "
+                    f"Port may be blocked by Windows or already in use. "
+                    f"Try a different port: --port 8081 or --port 8082"
+                ) from e
+            elif e.errno == 98:  # Linux: Address already in use
+                raise OSError(
+                    f"Port {self.config.port} is already in use. "
+                    f"Try a different port: --port 8081"
+                ) from e
+            raise
 
         addr = self._server.sockets[0].getsockname()
         logger.info("Dashboard server started at http://%s:%s", addr[0], addr[1])

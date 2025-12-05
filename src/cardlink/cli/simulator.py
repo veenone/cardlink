@@ -83,6 +83,11 @@ def cli(ctx: click.Context, verbose: bool) -> None:
     help="Timeout simulation probability (0.0 to 1.0)",
 )
 @click.option(
+    "--enable-null-ciphers",
+    is_flag=True,
+    help="Enable NULL cipher suites with NO ENCRYPTION - for debugging only in isolated environments!",
+)
+@click.option(
     "-n", "--count",
     type=int,
     default=1,
@@ -114,6 +119,7 @@ def run(
     mode: str,
     error_rate: float,
     timeout_probability: float,
+    enable_null_ciphers: bool,
     count: int,
     parallel: bool,
     loop: bool,
@@ -168,6 +174,7 @@ def run(
             server_port=port,
             psk_identity=psk_identity,
             psk_key=psk_key_bytes,
+            enable_null_ciphers=enable_null_ciphers,
             behavior=behavior,
         )
 
@@ -182,6 +189,13 @@ def run(
     console.print(f"Server: {sim_config.server_address}")
     console.print(f"PSK Identity: {sim_config.psk_identity}")
     console.print(f"Mode: {sim_config.behavior.mode.value}")
+
+    # Warn about NULL ciphers
+    if sim_config.enable_null_ciphers:
+        console.print()
+        console.print("[red bold]WARNING: NULL ciphers enabled - traffic will be UNENCRYPTED![/red bold]")
+        console.print("[red]Only use in isolated test environments![/red]")
+
     console.print()
 
     # Run sessions

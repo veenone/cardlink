@@ -590,6 +590,78 @@ handshake_timeout: 60.0
 
 ---
 
+### Protocol Debugging with NULL Ciphers
+
+**Problem:** Need to inspect TLS traffic with Wireshark for protocol debugging
+
+**Solution:** Enable NULL ciphers on both server and simulator
+
+**⚠️ CRITICAL WARNING:** NULL ciphers provide **NO ENCRYPTION**. Only use in isolated test environments!
+
+**Server Setup:**
+```bash
+# Start server with NULL ciphers enabled
+gp-server start \
+  --port 8443 \
+  --enable-null-ciphers \
+  --foreground
+
+# You'll see this warning:
+# +==============================================================+
+# |  WARNING: NULL CIPHERS ENABLED - NO ENCRYPTION!              |
+# |  Traffic will be transmitted in PLAINTEXT.                   |
+# |  Use only for testing in isolated environments.              |
+# +==============================================================+
+```
+
+**Simulator Setup:**
+```bash
+# Connect simulator with NULL ciphers enabled
+gp-simulator run \
+  --server 127.0.0.1:8443 \
+  --psk-identity test_card \
+  --psk-key 0102030405060708090A0B0C0D0E0F10 \
+  --enable-null-ciphers
+
+# You'll see this warning:
+# WARNING: NULL ciphers enabled - traffic will be UNENCRYPTED!
+# Only use in isolated test environments!
+```
+
+**YAML Configuration:**
+```yaml
+# server.yaml
+cipher_config:
+  enable_production: true
+  enable_null_ciphers: true  # Enable NULL ciphers
+
+# simulator.yaml
+cipher:
+  enable_null_ciphers: true  # Enable NULL ciphers
+
+psk:
+  identity: "test_card"
+  key: "0102030405060708090A0B0C0D0E0F10"
+```
+
+**Wireshark Capture:**
+```bash
+# Capture on loopback interface
+# The NULL cipher traffic will be visible in plaintext
+wireshark -i lo -f "tcp port 8443"
+
+# You should see TLS-PSK handshake followed by plaintext APDU data
+```
+
+**Security Checklist:**
+- ✅ Only use NULL ciphers in isolated test networks
+- ✅ Never enable NULL ciphers in production
+- ✅ Disable NULL ciphers immediately after debugging
+- ❌ Never use NULL ciphers on public networks
+- ❌ Never use NULL ciphers with real card data
+
+---
+
 ## Additional Resources
 
 - [PSK-TLS Server Guide](psk-tls-server-guide.md) - Detailed server documentation

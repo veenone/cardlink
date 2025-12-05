@@ -44,14 +44,14 @@ def cli(ctx: click.Context, verbose: bool) -> None:
     "--host",
     "-h",
     default="127.0.0.1",
-    help="Host to bind to",
+    help="Host to bind to (use 0.0.0.0 for all interfaces, 127.0.0.1 for localhost only)",
 )
 @click.option(
     "--port",
     "-p",
     type=int,
     default=8080,
-    help="Port to bind to",
+    help="Port to bind to (default: 8080, try 8081 or 8082 if 8080 is blocked)",
 )
 @click.option(
     "--open",
@@ -65,6 +65,23 @@ def start(ctx: click.Context, host: str, port: int, open_browser: bool) -> None:
 
     Starts the web dashboard for monitoring APDU traffic and
     managing test sessions.
+
+    Examples:
+        # Start on default port (localhost only)
+        gp-dashboard start
+
+        # Start on custom port
+        gp-dashboard start --port 8081
+
+        # Allow access from all interfaces
+        gp-dashboard start --host 0.0.0.0 --port 8080
+
+        # Open browser automatically
+        gp-dashboard start --open
+
+    Common Issues:
+        - Port blocked on Windows: Try --port 8081 or --port 8082
+        - Access from other machines: Use --host 0.0.0.0
     """
     try:
         from cardlink.dashboard import DashboardServer, DashboardConfig

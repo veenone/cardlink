@@ -149,6 +149,7 @@ class MobileSimulator:
                     psk_identity=self.config.effective_psk_identity,
                     psk_key=self.config.psk_key,
                     timeout=self.config.connect_timeout,
+                    enable_null_ciphers=self.config.enable_null_ciphers,
                 )
 
                 # Connect

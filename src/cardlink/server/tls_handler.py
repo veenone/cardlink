@@ -230,7 +230,7 @@ class TLSHandler:
             ssl_sock = sslpsk.wrap_socket(
                 sock,
                 server_side=True,
-                ssl_version=ssl.PROTOCOL_TLS_SERVER,
+                ssl_version=ssl.PROTOCOL_TLSv1_2,
                 ciphers=self._cipher_config.get_openssl_cipher_string(),
                 psk=psk_callback_wrapper,
             )
