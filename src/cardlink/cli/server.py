@@ -40,13 +40,25 @@ logger = logging.getLogger(__name__)
 # Global server instance for signal handling
 _server_instance: Optional[AdminServer] = None
 
-# Default PID file location
-DEFAULT_PID_FILE = Path("/tmp/gp-ota-server.pid")
+# Default PID file location (cross-platform)
+def _get_default_pid_file() -> Path:
+    """Get default PID file location based on platform."""
+    if sys.platform == "win32":
+        # Windows: use TEMP directory
+        import tempfile
+        temp_dir = Path(tempfile.gettempdir())
+        return temp_dir / "gp-ota-server.pid"
+    else:
+        # Unix-like: use /tmp
+        return Path("/tmp/gp-ota-server.pid")
 
 
 def _get_pid_file() -> Path:
     """Get the PID file path from environment or default."""
-    return Path(os.environ.get("GP_OTA_SERVER_PID_FILE", str(DEFAULT_PID_FILE)))
+    env_path = os.environ.get("GP_OTA_SERVER_PID_FILE")
+    if env_path:
+        return Path(env_path)
+    return _get_default_pid_file()
 
 
 def _write_pid_file(pid: int) -> None:
@@ -388,6 +400,7 @@ def start(
             fg="green",
         ))
         click.echo(f"PID: {os.getpid()}")
+        click.echo(f"PID file: {_get_pid_file()}")
 
         if foreground:
             click.echo("Press Ctrl+C to stop the server")
@@ -402,6 +415,13 @@ def start(
             click.echo(
                 f"Server running in background. Use 'gp-server stop' to stop."
             )
+
+            # Keep running in background
+            try:
+                while server.is_running:
+                    time.sleep(1)
+            finally:
+                _remove_pid_file()
 
     except Exception as e:
         _remove_pid_file()

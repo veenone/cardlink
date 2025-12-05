@@ -322,9 +322,16 @@ export GP_OTA_SERVER_PORT="9443"
 # Set default config file
 export GP_OTA_SERVER_CONFIG="/etc/gp-server/server.yaml"
 
+# Set custom PID file location
+export GP_OTA_SERVER_PID_FILE="/var/run/gp-server.pid"
+
 # Start server (uses environment variables)
 gp-server start
 ```
+
+**Default PID File Locations:**
+- Linux/macOS: `/tmp/gp-ota-server.pid`
+- Windows: `%TEMP%\gp-ota-server.pid` (e.g., `C:\Users\...\AppData\Local\Temp\gp-ota-server.pid`)
 
 ---
 
@@ -612,13 +619,19 @@ gp-server start --config server.yaml
 # With CLI options
 gp-server start --port 8443 --keys keys.yaml
 
-# Debug mode
-gp-server start --enable-null-ciphers --foreground --debug
+# With verbose logging (global option before command)
+gp-server -v start --port 8443 --keys keys.yaml
+
+# Debug mode with foreground execution
+gp-server --debug start --enable-null-ciphers --foreground
 ```
 
 ### Stop
 ```bash
 gp-server stop
+
+# Force stop if graceful shutdown fails
+gp-server stop --force
 ```
 
 ### Status
