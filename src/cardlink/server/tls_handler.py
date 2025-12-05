@@ -113,20 +113,24 @@ class TLSHandler:
         # Warn about NULL ciphers
         if self._cipher_config.enable_null_ciphers:
             logger.warning(
-                "╔════════════════════════════════════════════════════════════╗"
+                "+============================================================+"
             )
             logger.warning(
-                "║  WARNING: NULL CIPHERS ENABLED - NO ENCRYPTION!            ║"
+                "|  WARNING: NULL CIPHERS ENABLED - NO ENCRYPTION!            |"
             )
             logger.warning(
-                "║  Traffic will be UNENCRYPTED. For testing only!            ║"
+                "|  Traffic will be UNENCRYPTED. For testing only!            |"
             )
             logger.warning(
-                "╚════════════════════════════════════════════════════════════╝"
+                "+============================================================+"
             )
 
-        # Create SSL context
-        self._ssl_context = self._create_ssl_context()
+        # Validate cipher configuration
+        # Note: sslpsk3 handles cipher configuration directly in wrap_socket,
+        # we just validate that the ciphers are specified correctly
+        cipher_string = self._cipher_config.get_openssl_cipher_string()
+        if not cipher_string:
+            raise TLSHandlerError("No cipher suites configured")
 
         logger.info(
             "TLS Handler initialized with ciphers: %s",
@@ -141,33 +145,6 @@ class TLSHandler:
                 "Max fragment length configured: %d bytes (per GP GPC_SPE_011 Table 3-2)",
                 self._cipher_config.max_fragment_length,
             )
-
-    def _create_ssl_context(self) -> ssl.SSLContext:
-        """Create SSL context with PSK configuration.
-
-        Returns:
-            Configured SSL context.
-        """
-        # Create server-side SSL context
-        context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
-
-        # Set minimum TLS version to 1.2 (required for SCP81)
-        context.minimum_version = ssl.TLSVersion.TLSv1_2
-        context.maximum_version = ssl.TLSVersion.TLSv1_2
-
-        # Set cipher suites
-        cipher_string = self._cipher_config.get_openssl_cipher_string()
-        try:
-            context.set_ciphers(cipher_string)
-        except ssl.SSLError as e:
-            logger.error("Failed to set cipher suites '%s': %s", cipher_string, e)
-            raise TLSHandlerError(f"Invalid cipher configuration: {e}") from e
-
-        # Disable certificate verification (using PSK instead)
-        context.check_hostname = False
-        context.verify_mode = ssl.CERT_NONE
-
-        return context
 
     def _psk_callback(self, identity: Optional[bytes]) -> Optional[bytes]:
         """PSK callback function for sslpsk3.
@@ -271,16 +248,16 @@ class TLSHandler:
             # Check for NULL cipher warning
             if "NULL" in cipher_suite.upper():
                 logger.warning(
-                    "╔════════════════════════════════════════════════════════════╗"
+                    "+============================================================+"
                 )
                 logger.warning(
-                    "║  UNENCRYPTED CONNECTION from %s", client_addr_str.ljust(20) + " ║"
+                    "|  UNENCRYPTED CONNECTION from %s", client_addr_str.ljust(20) + " |"
                 )
                 logger.warning(
-                    "║  Cipher: %s", cipher_suite.ljust(47) + " ║"
+                    "|  Cipher: %s", cipher_suite.ljust(47) + " |"
                 )
                 logger.warning(
-                    "╚════════════════════════════════════════════════════════════╝"
+                    "+============================================================+"
                 )
 
             # Create session info

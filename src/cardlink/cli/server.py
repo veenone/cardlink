@@ -274,11 +274,11 @@ def start(
     ):
         click.echo(click.style(
             "\n"
-            "╔══════════════════════════════════════════════════════════════╗\n"
-            "║  WARNING: NULL CIPHERS ENABLED - NO ENCRYPTION!              ║\n"
-            "║  Traffic will be transmitted in PLAINTEXT.                   ║\n"
-            "║  Use only for testing in isolated environments.              ║\n"
-            "╚══════════════════════════════════════════════════════════════╝\n",
+            "+==============================================================+\n"
+            "|  WARNING: NULL CIPHERS ENABLED - NO ENCRYPTION!              |\n"
+            "|  Traffic will be transmitted in PLAINTEXT.                   |\n"
+            "|  Use only for testing in isolated environments.              |\n"
+            "+==============================================================+\n",
             fg="yellow",
         ))
 
