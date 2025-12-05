@@ -899,6 +899,155 @@ class BIPConfiguration:
         return ".".join(labels)
 
 
+@dataclass
+class CardProfile:
+    """Complete UICC card profile.
+
+    Captures all configurable parameters for a card including
+    identification, PSK credentials, server URLs, triggers, and BIP settings.
+
+    This allows saving/loading complete card configurations and
+    applying them to multiple cards.
+
+    Attributes:
+        iccid: Integrated Circuit Card Identifier (unique card ID)
+        atr: Answer To Reset bytes from card
+        psk: PSK-TLS configuration (identity and key)
+        url: Admin server URL configuration
+        trigger: OTA trigger configuration
+        bip: Bearer Independent Protocol configuration
+    """
+
+    iccid: str
+    atr: bytes
+    psk: Optional[PSKConfiguration] = None
+    url: Optional[str] = None
+    trigger: Optional[TriggerConfiguration] = None
+    bip: Optional[BIPConfiguration] = None
+
+    def to_dict(self, include_keys: bool = False) -> dict:
+        """Convert profile to dictionary for JSON export.
+
+        Args:
+            include_keys: If True, include PSK key material in export.
+                         If False, only include identity.
+
+        Returns:
+            Dictionary representation of profile
+        """
+        profile_dict = {
+            "iccid": self.iccid,
+            "atr": self.atr.hex(),
+        }
+
+        if self.psk:
+            profile_dict["psk"] = {
+                "identity": self.psk.identity,
+            }
+            if include_keys:
+                profile_dict["psk"]["key"] = self.psk.key.hex()
+
+        if self.url:
+            profile_dict["url"] = self.url
+
+        if self.trigger:
+            trigger_dict = {}
+            if self.trigger.sms_trigger:
+                trigger_dict["sms"] = {
+                    "tar": self.trigger.sms_trigger.tar.hex(),
+                    "originating_address": self.trigger.sms_trigger.originating_address,
+                    "kic": self.trigger.sms_trigger.kic.hex(),
+                    "kid": self.trigger.sms_trigger.kid.hex(),
+                    "counter": self.trigger.sms_trigger.counter.hex(),
+                }
+            if self.trigger.poll_trigger:
+                trigger_dict["poll"] = {
+                    "interval": self.trigger.poll_trigger.interval,
+                    "enabled": self.trigger.poll_trigger.enabled,
+                }
+            profile_dict["trigger"] = trigger_dict
+
+        if self.bip:
+            profile_dict["bip"] = {
+                "bearer_type": self.bip.bearer_type.value,
+                "apn": self.bip.apn,
+                "buffer_size": self.bip.buffer_size,
+                "timeout": self.bip.timeout,
+            }
+
+        return profile_dict
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "CardProfile":
+        """Create profile from dictionary.
+
+        Args:
+            data: Profile dictionary (from JSON)
+
+        Returns:
+            CardProfile instance
+        """
+        # Parse PSK if present
+        psk = None
+        if "psk" in data:
+            psk_data = data["psk"]
+            key = None
+            if "key" in psk_data:
+                key = bytes.fromhex(psk_data["key"])
+            psk = PSKConfiguration(
+                identity=psk_data["identity"],
+                key=key if key else b"",  # Placeholder if key not in export
+            )
+
+        # Parse trigger if present
+        trigger = None
+        if "trigger" in data:
+            sms_trigger = None
+            poll_trigger = None
+
+            if "sms" in data["trigger"]:
+                sms_data = data["trigger"]["sms"]
+                sms_trigger = SMSTriggerConfig(
+                    tar=bytes.fromhex(sms_data["tar"]),
+                    originating_address=sms_data.get("originating_address", ""),
+                    kic=bytes.fromhex(sms_data["kic"]),
+                    kid=bytes.fromhex(sms_data["kid"]),
+                    counter=bytes.fromhex(sms_data["counter"]),
+                )
+
+            if "poll" in data["trigger"]:
+                poll_data = data["trigger"]["poll"]
+                poll_trigger = PollTriggerConfig(
+                    interval=poll_data["interval"],
+                    enabled=poll_data["enabled"],
+                )
+
+            trigger = TriggerConfiguration(
+                sms_trigger=sms_trigger,
+                poll_trigger=poll_trigger,
+            )
+
+        # Parse BIP if present
+        bip = None
+        if "bip" in data:
+            bip_data = data["bip"]
+            bip = BIPConfiguration(
+                bearer_type=BearerType(bip_data["bearer_type"]),
+                apn=bip_data.get("apn"),
+                buffer_size=bip_data.get("buffer_size", 1500),
+                timeout=bip_data.get("timeout", 30),
+            )
+
+        return cls(
+            iccid=data["iccid"],
+            atr=bytes.fromhex(data["atr"]),
+            psk=psk,
+            url=data.get("url"),
+            trigger=trigger,
+            bip=bip,
+        )
+
+
 # =============================================================================
 # Event Models
 # =============================================================================

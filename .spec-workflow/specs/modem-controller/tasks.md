@@ -157,13 +157,13 @@ _Leverage:_ Click framework, ModemController API, tabulate/rich for formatting
 _Requirements:_ 8
 _Prompt:_ Role: CLI development engineer | Task: Implement cardlink-modem CLI with commands for listing, info, AT commands, triggers, monitoring, diagnostics, and profile management | Restrictions: Use Click framework, format output as table, handle no modems found, support --json flag | Success: All CLI commands work correctly with proper output formatting
 
-- [ ] 13.1. Create CLI module with `list` command showing connected modems
-- [ ] 13.2. Implement `info` command with filtering options (--modem, --sim, --network, --all, --json)
-- [ ] 13.3. Implement `at` command for direct AT command execution
-- [ ] 13.4. Implement `trigger` command with --template and --pdu options
-- [ ] 13.5. Implement `monitor` command for real-time BIP/URC monitoring with Ctrl+C handling
-- [ ] 13.6. Implement `diag` command for QXDM diagnostic capture
-- [ ] 13.7. Implement `profile` subcommands (save, load, compare, list)
+- [x] 13.1. Create CLI module with `list` command showing connected modems
+- [x] 13.2. Implement `info` command with filtering options (--modem, --sim, --network, --all, --json)
+- [x] 13.3. Implement `at` command for direct AT command execution
+- [x] 13.4. Implement `trigger` command with --template and --pdu options
+- [x] 13.5. Implement `monitor` command for real-time BIP/URC monitoring with Ctrl+C handling
+- [x] 13.6. Implement `diag` command for QXDM diagnostic capture
+- [x] 13.7. Implement `profile` subcommands (save, load, compare, list, delete)
 - [ ] 13.8. Write CLI integration tests
 
 ### 14. Integration Testing
@@ -216,11 +216,11 @@ Task 5 (ModemManager) + Task 6 (ModemInfo) + Task 7 (BIPMonitor) + Task 8 (SMSTr
 | Task 10 | 4 | 3 | 1 | Vendor-specific (Quectel) |
 | Task 11 | 4 | 4 | 0 | QXDM interface (optional) |
 | Task 12 | 4 | 3 | 1 | Modem controller main class |
-| Task 13 | 8 | 0 | 8 | CLI integration |
+| Task 13 | 8 | 7 | 1 | CLI integration |
 | Task 14 | 2 | 0 | 2 | Integration testing |
 
 **Total: 14 task groups, 71 subtasks**
-**Progress: 51 completed, 20 pending**
+**Progress: 58 completed, 13 pending**
 
 ## Requirements Mapping
 

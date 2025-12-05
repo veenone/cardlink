@@ -51,6 +51,7 @@ from cardlink.provisioner.models import (
     BearerType,
     BIPConfiguration,
     CardInfo,
+    CardProfile,
     CardType,
     Convention,
     ATRInfo,
@@ -106,6 +107,7 @@ from cardlink.provisioner.psk_config import PSKConfig
 from cardlink.provisioner.url_config import URLConfig
 from cardlink.provisioner.trigger_config import TriggerConfig
 from cardlink.provisioner.bip_config import BIPConfig
+from cardlink.provisioner.profile_manager import ProfileManager
 
 
 __all__ = [
@@ -145,6 +147,7 @@ __all__ = [
     "TriggerConfiguration",
     "BearerType",
     "BIPConfiguration",
+    "CardProfile",
     "ProvisionerEvent",
     # TLV
     "TLV",
@@ -173,4 +176,5 @@ __all__ = [
     "URLConfig",
     "TriggerConfig",
     "BIPConfig",
+    "ProfileManager",
 ]

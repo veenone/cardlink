@@ -399,18 +399,18 @@ _Requirements:_ REQ-036 (Profile Management), REQ-037 (Profile Export/Import), R
 
 _Prompt:_ Role: Card Profile Management Developer | Task: Implement profile manager for capturing, comparing, and applying complete UICC configurations. Create CardProfile dataclass containing ICCID, ATR, PSK, URL, trigger, and BIP configurations. Support JSON export/import with optional key inclusion, profile comparison to generate diffs, and profile application to provision cards. Include ICCID BCD decoding and card information extraction. | Restrictions: Must not export keys by default. Must validate profile before application. Must check card compatibility (ICCID pattern). Must handle partial profiles gracefully. | Success: ProfileManager saves complete card profiles to JSON, loads profiles from files, compares profiles showing differences, applies profiles to cards with validation, handles ICCID correctly, with unit tests covering all operations.
 
-- [ ] 14.1. Create `profile_manager.py` with CardProfile dataclass
-- [ ] 14.2. Implement `to_json(include_keys)` export method
-- [ ] 14.3. Implement `from_json(json_str)` class method
-- [ ] 14.4. Create ProfileManager class with all config dependencies
-- [ ] 14.5. Implement `save_profile(name, include_keys)` to capture card state
-- [ ] 14.6. Implement `_get_card_info()` to read ICCID and ATR
-- [ ] 14.7. Implement `_decode_iccid()` BCD decoder
-- [ ] 14.8. Implement `load_profile(profile)` to generate diff
-- [ ] 14.9. Implement `apply_profile(profile, psk_key)` to provision card
-- [ ] 14.10. Implement `compare_profiles(profile1, profile2)`
-- [ ] 14.11. Implement `export_profile(profile, path, include_keys)`
-- [ ] 14.12. Implement `import_profile(path)` file loader
+- [x] 14.1. Create `profile_manager.py` with CardProfile dataclass (in models.py)
+- [x] 14.2. Implement `to_dict(include_keys)` export method
+- [x] 14.3. Implement `from_dict(json_str)` class method (from_dict)
+- [x] 14.4. Create ProfileManager class with all config dependencies
+- [x] 14.5. Implement `save_profile(name, include_keys)` to capture card state
+- [x] 14.6. Implement `_get_card_info()` to read ICCID and ATR (_get_iccid, _get_atr)
+- [x] 14.7. Implement `_decode_iccid()` BCD decoder
+- [x] 14.8. Implement `load_profile(profile)` to generate diff (compare_profiles)
+- [x] 14.9. Implement `apply_profile(profile, psk_key)` to provision card
+- [x] 14.10. Implement `compare_profiles(profile1, profile2)`
+- [x] 14.11. Implement `export_profile(profile, path, include_keys)`
+- [x] 14.12. Implement `import_profile(path)` file loader
 - [ ] 14.13. Write unit tests for profile operations
 
 ### 15. Event Emitter Implementation
