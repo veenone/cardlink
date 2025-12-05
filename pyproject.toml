@@ -48,11 +48,14 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+# PSK-TLS Server Support
+# Install with: pip install cardlink[server]
+# Note: Requires OpenSSL with PSK cipher support (included in most systems)
 psk = [
     "sslpsk3>=1.0",     # PSK-TLS support
 ]
 server = [
-    "sslpsk3>=1.0",     # PSK-TLS support
+    "sslpsk3>=1.0",     # PSK-TLS support (required for gp-server CLI)
     "pydantic>=2.0",    # Data validation for events
 ]
 database = [

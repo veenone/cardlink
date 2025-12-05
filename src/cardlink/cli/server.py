@@ -113,6 +113,23 @@ def cli(ctx: click.Context, verbose: bool, debug: bool) -> None:
 
     A GlobalPlatform SCP81 compliant PSK-TLS server for Over-The-Air
     UICC administration testing.
+
+    Available Commands:
+        start     - Start the PSK-TLS server
+        stop      - Stop the running server
+        status    - Show server status and statistics
+        validate  - Validate configuration files before starting
+
+    Use 'gp-server COMMAND --help' for detailed help on each command.
+
+    Configuration:
+        Config files: examples/configs/server_config.yaml
+        Keys files:   examples/configs/psk_keys.yaml
+
+    Environment Variables:
+        GP_OTA_SERVER_HOST     - Override default host
+        GP_OTA_SERVER_PORT     - Override default port
+        GP_OTA_SERVER_CONFIG   - Default config file path
     """
     # Configure logging
     if debug:
@@ -156,51 +173,51 @@ def cli(ctx: click.Context, verbose: bool, debug: bool) -> None:
     "--config", "-c",
     type=click.Path(exists=True, dir_okay=False, path_type=Path),
     envvar="GP_OTA_SERVER_CONFIG",
-    help="Path to YAML configuration file",
+    help="Path to YAML configuration file (see examples/configs/server_config.yaml for format)",
 )
 @click.option(
     "--keys", "-k",
     type=click.Path(exists=True, dir_okay=False, path_type=Path),
-    help="Path to PSK keys YAML file",
+    help="Path to PSK keys YAML file containing identity:key pairs (see examples/configs/psk_keys.yaml)",
 )
 @click.option(
     "--ciphers",
     default="production",
     type=click.Choice(["production", "legacy", "all"]),
-    help="Cipher suite selection (default: production)",
+    help="Cipher suite selection: 'production' (AES-CBC-SHA256/384), 'legacy' (AES-CBC-SHA), 'all' (both)",
 )
 @click.option(
     "--enable-null-ciphers",
     is_flag=True,
-    help="Enable NULL cipher suites (NO ENCRYPTION - testing only!)",
+    help="Enable NULL cipher suites with NO ENCRYPTION - for debugging only in isolated environments!",
 )
 @click.option(
     "--max-connections",
     default=10,
     type=int,
-    help="Maximum concurrent connections (default: 10)",
+    help="Maximum concurrent client connections to accept (default: 10, each uses one thread)",
 )
 @click.option(
     "--session-timeout",
     default=300.0,
     type=float,
-    help="Session timeout in seconds (default: 300)",
+    help="Session inactivity timeout in seconds - inactive sessions are automatically closed (default: 300)",
 )
 @click.option(
     "--handshake-timeout",
     default=30.0,
     type=float,
-    help="TLS handshake timeout in seconds (default: 30)",
+    help="TLS handshake timeout in seconds - handshake must complete within this time (default: 30)",
 )
 @click.option(
     "--dashboard",
     is_flag=True,
-    help="Enable web dashboard (requires dashboard module)",
+    help="Enable web dashboard for server monitoring (requires dashboard module installation)",
 )
 @click.option(
     "--foreground", "-f",
     is_flag=True,
-    help="Run in foreground (don't daemonize)",
+    help="Run server in foreground with console output instead of backgrounding (useful for debugging)",
 )
 @click.pass_context
 def start(
@@ -222,19 +239,43 @@ def start(
     The server will listen for incoming TLS-PSK connections and process
     GlobalPlatform APDU commands.
 
+    Configuration Priority (highest to lowest):
+        1. CLI options (e.g., --port, --host)
+        2. Environment variables (GP_OTA_SERVER_HOST, GP_OTA_SERVER_PORT)
+        3. Configuration file (--config)
+        4. Built-in defaults
+
+    Configuration File Format:
+        See examples/configs/server_config.yaml for a complete example.
+        The config file supports all server options including cipher suites,
+        timeouts, connection limits, and key store paths.
+
+    PSK Keys File Format:
+        See examples/configs/psk_keys.yaml for key store format.
+        Contains identity:key pairs in YAML format.
+
     Examples:
 
-        # Start with defaults
-        gp-ota-server start
+        # Start with defaults (localhost:8443)
+        gp-server start
 
         # Start on custom port
-        gp-ota-server start --port 9443
+        gp-server start --port 9443
 
         # Start with configuration file
-        gp-ota-server start --config server.yaml
+        gp-server start --config examples/configs/server_config.yaml
+
+        # Start with separate keys file
+        gp-server start --config server.yaml --keys psk_keys.yaml
 
         # Start with verbose logging
-        gp-ota-server -v start --port 8443
+        gp-server -v start --port 8443
+
+        # Start with NULL ciphers for debugging (NO ENCRYPTION!)
+        gp-server start --enable-null-ciphers --foreground
+
+        # Validate config before starting
+        gp-server validate --config server.yaml --keys psk_keys.yaml
     """
     global _server_instance
 
