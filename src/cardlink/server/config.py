@@ -43,21 +43,22 @@ class CipherConfig:
     """
 
     # TLS 1.2 production ciphers (mandatory per GP spec)
+    # Using OpenSSL cipher names (not IANA names)
     production_ciphers: List[str] = field(default_factory=lambda: [
-        "TLS_PSK_WITH_AES_128_CBC_SHA256",  # Mandatory
-        "TLS_PSK_WITH_AES_256_CBC_SHA384",  # Recommended
+        "PSK-AES128-CBC-SHA256",  # Mandatory per GP spec
+        "PSK-AES256-CBC-SHA384",  # Recommended per GP spec
     ])
 
     # TLS 1.2 legacy ciphers (for backward compatibility)
     legacy_ciphers: List[str] = field(default_factory=lambda: [
-        "TLS_PSK_WITH_AES_128_CBC_SHA",
-        "TLS_PSK_WITH_AES_256_CBC_SHA",
+        "PSK-AES128-CBC-SHA",
+        "PSK-AES256-CBC-SHA",
     ])
 
     # NULL ciphers for testing only (NO ENCRYPTION)
     null_ciphers: List[str] = field(default_factory=lambda: [
-        "TLS_PSK_WITH_NULL_SHA256",
-        "TLS_PSK_WITH_NULL_SHA",
+        "PSK-NULL-SHA256",
+        "PSK-NULL-SHA",
     ])
 
     # TLS 1.3 ciphers per GP spec (future support - requires sslpsk3 TLS 1.3)

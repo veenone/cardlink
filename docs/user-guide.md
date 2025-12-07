@@ -132,6 +132,7 @@ The package provides optional dependency groups:
 ```bash
 # Check installed CLI commands
 gp-server --help
+gp-simulator --help
 gp-phone --help
 gp-modem --help
 gp-db --help
@@ -148,6 +149,7 @@ cardlink/
 │   ├── __init__.py           # Package version
 │   ├── cli/                   # CLI commands
 │   │   ├── server.py         # gp-server / gp-ota-server
+│   │   ├── simulator.py      # gp-simulator
 │   │   ├── phone.py          # gp-phone
 │   │   ├── modem.py          # gp-modem
 │   │   ├── db.py             # gp-db
@@ -174,8 +176,11 @@ cardlink/
 │   ├── database/              # Database Layer
 │   │   ├── manager.py        # DatabaseManager
 │   │   └── models.py         # SQLAlchemy models
-│   └── dashboard/             # Web Dashboard
-│       └── server.py         # Dashboard HTTP server
+│   ├── dashboard/             # Web Dashboard
+│   │   └── server.py         # Dashboard HTTP server
+│   └── simulator/             # UICC Card Simulator
+│       ├── virtual_uicc.py   # Virtual card implementation
+│       └── http_client.py    # GP Admin HTTP client
 ├── examples/
 │   └── configs/               # Example configuration files
 │       ├── server_config.yaml
@@ -189,18 +194,46 @@ cardlink/
 
 ## Quick Start
 
-### 1. Start the PSK-TLS Server
+### 1. Create PSK Keys File
 
 ```bash
-# Copy example configuration
-cp examples/configs/server_config.yaml config.yaml
-cp examples/configs/psk_keys.yaml keys.yaml
-
-# Start the server
-gp-server start --config config.yaml --keys keys.yaml
+# Create keys.yaml with a test key
+cat > keys.yaml << 'EOF'
+# PSK keys: identity -> hex key (16 or 32 bytes)
+test_card: "0102030405060708090A0B0C0D0E0F10"
+EOF
 ```
 
-### 2. List Connected Android Phones
+### 2. Start the PSK-TLS Server
+
+```bash
+# Start server with dashboard (foreground mode)
+gp-server start --port 8443 --keys keys.yaml --foreground --dashboard --dashboard-port 8080
+
+# For testing, enable NULL ciphers (no encryption)
+gp-server start --port 8443 --keys keys.yaml --enable-null-ciphers --foreground --dashboard --dashboard-port 8080
+```
+
+### 3. Test with Simulator
+
+Open a new terminal and run the simulator:
+
+```bash
+# Run single card simulation
+gp-simulator run --server 127.0.0.1:8443 --psk-identity test_card --psk-key 0102030405060708090A0B0C0D0E0F10
+
+# With NULL ciphers (must match server)
+gp-simulator run --server 127.0.0.1:8443 --psk-identity test_card --psk-key 0102030405060708090A0B0C0D0E0F10 --enable-null-ciphers
+```
+
+### 4. View Dashboard
+
+Open your browser and navigate to `http://127.0.0.1:8080` to see:
+- Active sessions
+- Real-time APDU traffic
+- Connection status
+
+### 5. List Connected Android Phones (Optional)
 
 ```bash
 # Ensure ADB is running
@@ -210,7 +243,7 @@ adb start-server
 gp-phone list
 ```
 
-### 3. Initialize Database
+### 6. Initialize Database (Optional)
 
 ```bash
 # Using default SQLite
@@ -218,12 +251,6 @@ gp-db init
 
 # Using PostgreSQL
 gp-db --database postgresql://user:pass@localhost/cardlink init
-```
-
-### 4. Start Web Dashboard
-
-```bash
-gp-dashboard start --open
 ```
 
 ---
@@ -235,21 +262,76 @@ gp-dashboard start --open
 PSK-TLS Admin Server for SCP81 OTA administration.
 
 ```bash
-# Start server with defaults
-gp-server start
+# Start server with defaults (foreground mode)
+gp-server start --port 8443 --keys keys.yaml --foreground
 
-# Start with custom configuration
-gp-server start --config server_config.yaml --keys psk_keys.yaml
+# Start with web dashboard for real-time monitoring
+gp-server start --port 8443 --keys keys.yaml --foreground --dashboard --dashboard-port 8080
 
-# Start on specific host/port
-gp-server start --host 0.0.0.0 --port 8443
+# Start on specific host/port with NULL ciphers (testing only)
+gp-server start --host 0.0.0.0 --port 8443 --keys keys.yaml --enable-null-ciphers --foreground
 
-# Enable debug logging
-gp-server start --verbose
+# Enable verbose debug logging
+gp-server start --port 8443 --keys keys.yaml --foreground --verbose
 
-# Validate configuration without starting
-gp-server validate --config server_config.yaml
+# Enable both verbose and debug logging
+gp-server start --port 8443 --keys keys.yaml --foreground --verbose --debug
+
+# Run in background (daemon mode, Unix only)
+gp-server start --port 8443 --keys keys.yaml
 ```
+
+**Server Options:**
+
+| Option | Description |
+|--------|-------------|
+| `--host` | Bind address (default: 127.0.0.1) |
+| `--port` | Listen port (default: 8443) |
+| `--keys` | Path to PSK keys YAML file |
+| `--foreground` | Run in foreground (required on Windows) |
+| `--dashboard` | Enable web dashboard |
+| `--dashboard-port` | Dashboard HTTP port (default: 8080) |
+| `--enable-null-ciphers` | Allow NULL ciphers for testing (INSECURE) |
+| `--verbose` | Enable verbose logging |
+| `--debug` | Enable debug-level logging |
+
+### gp-simulator
+
+UICC card simulator for testing the PSK-TLS Admin Server.
+
+```bash
+# Run single simulation connecting to server
+gp-simulator run --server 127.0.0.1:8443 --psk-identity test_card --psk-key 0102030405060708090A0B0C0D0E0F10
+
+# Run with NULL ciphers (must match server)
+gp-simulator run --server 127.0.0.1:8443 --psk-identity test_card --psk-key 0102030405060708090A0B0C0D0E0F10 --enable-null-ciphers
+
+# Run multiple simulated cards in sequence
+gp-simulator run --server 127.0.0.1:8443 --psk-identity test_card --psk-key 0102030405060708090A0B0C0D0E0F10 --count 5
+
+# Run multiple simulated cards in parallel
+gp-simulator run --server 127.0.0.1:8443 --psk-identity test_card --psk-key 0102030405060708090A0B0C0D0E0F10 --count 3 --parallel
+
+# Run in continuous loop with interval
+gp-simulator run --server 127.0.0.1:8443 --psk-identity test_card --psk-key 0102030405060708090A0B0C0D0E0F10 --loop --interval 5
+
+# Enable verbose output
+gp-simulator run --server 127.0.0.1:8443 --psk-identity test_card --psk-key 0102030405060708090A0B0C0D0E0F10 --verbose
+```
+
+**Simulator Options:**
+
+| Option | Description |
+|--------|-------------|
+| `--server` | Server address as host:port |
+| `--psk-identity` | PSK identity (must exist in server's keys file) |
+| `--psk-key` | PSK key in hexadecimal |
+| `--enable-null-ciphers` | Use NULL ciphers (must match server) |
+| `--count` | Number of simulations to run (default: 1) |
+| `--parallel` | Run simulations concurrently |
+| `--loop` | Run continuously until interrupted |
+| `--interval` | Delay between loop iterations in seconds |
+| `--verbose` | Enable verbose logging |
 
 ### gp-phone
 
@@ -421,27 +503,34 @@ export DATABASE_URL="postgresql://user:pass@localhost/cardlink"
 
 ## Usage Examples
 
-### Example 1: Basic OTA Server Setup
+### Example 1: Server and Simulator Testing
 
 ```bash
-# Create configuration
-mkdir -p ~/.config/gp-ota
-cat > ~/.config/gp-ota/config.yaml << 'EOF'
-host: "127.0.0.1"
-port: 8443
-keys_file: "~/.config/gp-ota/keys.yaml"
-cipher_config:
-  enable_production: true
-EOF
+# Terminal 1: Start the server with dashboard
+gp-server start --port 8443 --keys keys.yaml --enable-null-ciphers --foreground --dashboard --dashboard-port 8080
 
-# Generate PSK key
-python -c "import secrets; print(f'my_card: \"{secrets.token_hex(16)}\"')" > ~/.config/gp-ota/keys.yaml
+# Terminal 2: Run a single simulation
+gp-simulator run --server 127.0.0.1:8443 --psk-identity test_card --psk-key 0102030405060708090A0B0C0D0E0F10 --enable-null-ciphers
 
-# Start server
-gp-server start --config ~/.config/gp-ota/config.yaml
+# Terminal 2: Run 5 simulations in parallel
+gp-simulator run --server 127.0.0.1:8443 --psk-identity test_card --psk-key 0102030405060708090A0B0C0D0E0F10 --enable-null-ciphers --count 5 --parallel
+
+# Terminal 2: Run continuous loop (press Ctrl+C to stop)
+gp-simulator run --server 127.0.0.1:8443 --psk-identity test_card --psk-key 0102030405060708090A0B0C0D0E0F10 --enable-null-ciphers --loop --interval 2
 ```
 
-### Example 2: Android Phone Testing Workflow
+### Example 2: Production Server Setup
+
+```bash
+# Create PSK keys file with secure random keys
+python -c "import secrets; print(f'card_001: \"{secrets.token_hex(16)}\"')" > keys.yaml
+python -c "import secrets; print(f'card_002: \"{secrets.token_hex(16)}\"')" >> keys.yaml
+
+# Start server (production - no NULL ciphers)
+gp-server start --host 0.0.0.0 --port 8443 --keys keys.yaml --foreground --dashboard --dashboard-port 8080
+```
+
+### Example 3: Android Phone Testing Workflow
 
 ```bash
 # 1. Discover connected devices
@@ -457,7 +546,7 @@ gp-phone at ABC123456789 "AT+CPIN?"
 gp-phone monitor ABC123456789
 ```
 
-### Example 3: Programmatic Usage
+### Example 4: Programmatic Usage
 
 ```python
 import asyncio
@@ -481,7 +570,7 @@ async def main():
 asyncio.run(main())
 ```
 
-### Example 4: UICC Provisioning (PC/SC)
+### Example 5: UICC Provisioning (PC/SC)
 
 ```python
 from cardlink.provisioner import (
@@ -521,7 +610,7 @@ for app in apps:
 client.disconnect()
 ```
 
-### Example 5: Database Integration
+### Example 6: Database Integration
 
 ```python
 from cardlink.database import DatabaseManager, DatabaseConfig
@@ -636,6 +725,7 @@ pip install -e ".[all]" --force-reinstall
 ## Additional Documentation
 
 - [PSK-TLS Server Guide](psk-tls-server-guide.md) - Detailed PSK-TLS server setup and configuration
+- [Simulator Guide](simulator-guide.md) - UICC card simulator for testing
 
 ---
 

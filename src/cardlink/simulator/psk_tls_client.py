@@ -67,18 +67,19 @@ class PSKTLSClient:
     """
 
     # Supported PSK cipher suites per GlobalPlatform GPC_SPE_011 Table 3-2
+    # Using OpenSSL cipher names (not IANA names)
     # Production ciphers (TLS 1.2 mandatory)
     PSK_CIPHERS = [
-        "TLS_PSK_WITH_AES_128_CBC_SHA256",  # Mandatory per GP spec
-        "TLS_PSK_WITH_AES_256_CBC_SHA384",  # Recommended
-        "TLS_PSK_WITH_AES_128_CBC_SHA",     # Legacy support
-        "TLS_PSK_WITH_AES_256_CBC_SHA",     # Legacy support
+        "PSK-AES128-CBC-SHA256",  # Mandatory per GP spec
+        "PSK-AES256-CBC-SHA384",  # Recommended
+        "PSK-AES128-CBC-SHA",     # Legacy support
+        "PSK-AES256-CBC-SHA",     # Legacy support
     ]
 
     # NULL ciphers for testing only (NO ENCRYPTION)
     PSK_NULL_CIPHERS = [
-        "TLS_PSK_WITH_NULL_SHA256",
-        "TLS_PSK_WITH_NULL_SHA",
+        "PSK-NULL-SHA256",
+        "PSK-NULL-SHA",
     ]
 
     def __init__(
@@ -113,6 +114,9 @@ class PSKTLSClient:
         self.timeout = timeout
         self._enable_null_ciphers = enable_null_ciphers
 
+        # Store identity as bytes for sslpsk3 callback
+        self._psk_identity_bytes = psk_identity.encode('utf-8') if isinstance(psk_identity, str) else psk_identity
+
         self._socket: Optional[socket.socket] = None
         self._ssl_socket: Optional[ssl.SSLSocket] = None
         self._reader: Optional[asyncio.StreamReader] = None
@@ -129,7 +133,7 @@ class PSKTLSClient:
     @property
     def is_connected(self) -> bool:
         """Check if connection is active."""
-        return self._connected and self._writer is not None
+        return self._connected and self._ssl_socket is not None
 
     @property
     def connection_info(self) -> Optional[TLSConnectionInfo]:
@@ -242,9 +246,10 @@ class PSKTLSClient:
                 cipher_string = self._get_cipher_string()
                 logger.debug(f"Using cipher suites: {cipher_string}")
 
+                # sslpsk3 client callback returns (psk, identity) - PSK first, then identity
                 self._ssl_socket = sslpsk3.wrap_socket(
                     self._socket,
-                    psk=lambda hint: (self.psk_identity, self.psk_key),
+                    psk=lambda hint: (self.psk_key, self._psk_identity_bytes),
                     server_side=False,
                     ssl_version=ssl.PROTOCOL_TLSv1_2,
                     ciphers=cipher_string,
@@ -260,14 +265,15 @@ class PSKTLSClient:
             except Exception as e:
                 raise HandshakeError(f"Failed to wrap socket with PSK-TLS: {e}")
 
-            # Set non-blocking for asyncio
-            self._ssl_socket.setblocking(False)
+            # Keep socket blocking for synchronous I/O
+            # We'll use sync read/write wrapped in run_in_executor for async
+            self._ssl_socket.setblocking(True)
+            self._ssl_socket.settimeout(self.timeout)
 
-            # Create asyncio streams
-            loop = asyncio.get_event_loop()
-            self._reader, self._writer = await asyncio.open_connection(
-                sock=self._ssl_socket
-            )
+            # Store the socket directly - we'll use sync I/O
+            self._connected = True
+            self._reader = None  # Not using asyncio streams
+            self._writer = None  # Not using asyncio streams
 
             # Calculate handshake duration
             handshake_duration_ms = (time.monotonic() - start_time) * 1000
@@ -311,8 +317,9 @@ class PSKTLSClient:
             raise ConnectionError("Not connected")
 
         try:
-            self._writer.write(data)
-            await self._writer.drain()
+            # Use synchronous send wrapped in executor
+            loop = asyncio.get_event_loop()
+            await loop.run_in_executor(None, self._ssl_socket.sendall, data)
             logger.debug(f"Sent {len(data)} bytes")
         except Exception as e:
             raise ConnectionError(f"Failed to send data: {e}") from e
@@ -334,13 +341,17 @@ class PSKTLSClient:
             raise ConnectionError("Not connected")
 
         try:
+            # Use synchronous recv wrapped in executor
+            loop = asyncio.get_event_loop()
             data = await asyncio.wait_for(
-                self._reader.read(max_bytes),
+                loop.run_in_executor(None, self._ssl_socket.recv, max_bytes),
                 timeout=self.timeout,
             )
             logger.debug(f"Received {len(data)} bytes")
             return data
         except asyncio.TimeoutError:
+            raise TimeoutError(f"Read timeout after {self.timeout}s")
+        except socket.timeout:
             raise TimeoutError(f"Read timeout after {self.timeout}s")
         except Exception as e:
             raise ConnectionError(f"Failed to receive data: {e}") from e
@@ -362,15 +373,35 @@ class PSKTLSClient:
             raise ConnectionError("Not connected")
 
         try:
-            data = await asyncio.wait_for(
-                self._reader.readuntil(delimiter),
-                timeout=self.timeout,
-            )
-            logger.debug(f"Received {len(data)} bytes (until delimiter)")
-            return data
-        except asyncio.IncompleteReadError as e:
-            return e.partial
+            loop = asyncio.get_event_loop()
+            buffer = b""
+            start_time = time.monotonic()
+
+            while True:
+                # Check timeout
+                elapsed = time.monotonic() - start_time
+                if elapsed >= self.timeout:
+                    raise TimeoutError(f"Read timeout after {self.timeout}s")
+
+                # Read one byte at a time to find delimiter
+                chunk = await asyncio.wait_for(
+                    loop.run_in_executor(None, self._ssl_socket.recv, 1),
+                    timeout=self.timeout - elapsed,
+                )
+
+                if not chunk:
+                    # Connection closed
+                    logger.debug(f"Received {len(buffer)} bytes (connection closed)")
+                    return buffer
+
+                buffer += chunk
+                if buffer.endswith(delimiter):
+                    logger.debug(f"Received {len(buffer)} bytes (until delimiter)")
+                    return buffer
+
         except asyncio.TimeoutError:
+            raise TimeoutError(f"Read timeout after {self.timeout}s")
+        except socket.timeout:
             raise TimeoutError(f"Read timeout after {self.timeout}s")
         except Exception as e:
             raise ConnectionError(f"Failed to receive data: {e}") from e
@@ -392,16 +423,35 @@ class PSKTLSClient:
             raise ConnectionError("Not connected")
 
         try:
-            data = await asyncio.wait_for(
-                self._reader.readexactly(num_bytes),
-                timeout=self.timeout,
-            )
-            logger.debug(f"Received exactly {len(data)} bytes")
-            return data
-        except asyncio.IncompleteReadError as e:
-            raise ConnectionError(f"Connection closed, received only {len(e.partial)} bytes")
+            loop = asyncio.get_event_loop()
+            buffer = b""
+            start_time = time.monotonic()
+
+            while len(buffer) < num_bytes:
+                # Check timeout
+                elapsed = time.monotonic() - start_time
+                if elapsed >= self.timeout:
+                    raise TimeoutError(f"Read timeout after {self.timeout}s")
+
+                remaining = num_bytes - len(buffer)
+                chunk = await asyncio.wait_for(
+                    loop.run_in_executor(None, self._ssl_socket.recv, remaining),
+                    timeout=self.timeout - elapsed,
+                )
+
+                if not chunk:
+                    raise ConnectionError(f"Connection closed, received only {len(buffer)} bytes")
+
+                buffer += chunk
+
+            logger.debug(f"Received exactly {len(buffer)} bytes")
+            return buffer
         except asyncio.TimeoutError:
             raise TimeoutError(f"Read timeout after {self.timeout}s")
+        except socket.timeout:
+            raise TimeoutError(f"Read timeout after {self.timeout}s")
+        except ConnectionError:
+            raise
         except Exception as e:
             raise ConnectionError(f"Failed to receive data: {e}") from e
 
@@ -413,15 +463,6 @@ class PSKTLSClient:
     async def _cleanup(self) -> None:
         """Clean up connection resources."""
         self._connected = False
-
-        if self._writer:
-            try:
-                self._writer.close()
-                await self._writer.wait_closed()
-            except Exception:
-                pass
-            self._writer = None
-            self._reader = None
 
         if self._ssl_socket:
             try:
@@ -436,6 +477,9 @@ class PSKTLSClient:
             except Exception:
                 pass
             self._socket = None
+
+        self._reader = None
+        self._writer = None
 
         logger.debug("Connection cleaned up")
 

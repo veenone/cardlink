@@ -322,7 +322,8 @@ class DashboardServer:
         """Set the AdminServer instance for dashboard integration.
 
         When set, the dashboard will display real-time session and APDU
-        data from the PSK-TLS server.
+        data from the PSK-TLS server. Event subscriptions will be set up
+        when start() is called (after the event loop is ready).
 
         Args:
             admin_server: AdminServer instance to connect to.
@@ -332,35 +333,57 @@ class DashboardServer:
             return
 
         self._admin_server = admin_server
-        logger.info("Dashboard connected to AdminServer")
+        logger.info("Dashboard connected to AdminServer (events will be subscribed on start)")
 
-        # Subscribe to server events
-        if hasattr(admin_server, '_event_emitter') and admin_server._event_emitter:
-            emitter = admin_server._event_emitter
+    def _subscribe_to_admin_events(self) -> None:
+        """Subscribe to AdminServer events. Called from start() after loop is ready."""
+        if not self._admin_server:
+            return
 
-            def on_session_created(event):
-                # Use thread-safe scheduling since this may be called from AdminServer thread
-                if self._loop and self._loop.is_running():
-                    asyncio.run_coroutine_threadsafe(
-                        self._handle_server_session_created(event),
-                        self._loop
-                    )
-                else:
-                    logger.debug("Dashboard event loop not available for session event")
+        if not hasattr(self._admin_server, '_event_emitter') or not self._admin_server._event_emitter:
+            logger.warning("AdminServer has no event emitter")
+            return
 
-            def on_apdu_exchange(event):
-                # Use thread-safe scheduling since this may be called from AdminServer thread
-                if self._loop and self._loop.is_running():
-                    asyncio.run_coroutine_threadsafe(
-                        self._handle_server_apdu_exchange(event),
-                        self._loop
-                    )
-                else:
-                    logger.debug("Dashboard event loop not available for APDU event")
+        emitter = self._admin_server._event_emitter
 
-            emitter.subscribe('session_created', on_session_created)
-            emitter.subscribe('apdu_exchange', on_apdu_exchange)
-            self._admin_server_event_handler = (on_session_created, on_apdu_exchange)
+        def on_handshake_completed(event):
+            # Use thread-safe scheduling since this may be called from AdminServer thread
+            if self._loop and self._loop.is_running():
+                logger.info("Scheduling handshake_completed event for dashboard: %s", event.get('psk_identity', 'unknown'))
+                asyncio.run_coroutine_threadsafe(
+                    self._handle_server_session_created(event),
+                    self._loop
+                )
+            else:
+                logger.warning("Dashboard event loop not available for session event (loop=%s, running=%s)",
+                              self._loop is not None, self._loop.is_running() if self._loop else False)
+
+        def on_apdu_received(event):
+            # Use thread-safe scheduling since this may be called from AdminServer thread
+            if self._loop and self._loop.is_running():
+                asyncio.run_coroutine_threadsafe(
+                    self._handle_server_apdu_received(event),
+                    self._loop
+                )
+            else:
+                logger.debug("Dashboard event loop not available for APDU received event")
+
+        def on_apdu_sent(event):
+            # Use thread-safe scheduling since this may be called from AdminServer thread
+            if self._loop and self._loop.is_running():
+                asyncio.run_coroutine_threadsafe(
+                    self._handle_server_apdu_sent(event),
+                    self._loop
+                )
+            else:
+                logger.debug("Dashboard event loop not available for APDU sent event")
+
+        # Subscribe to correct server event names
+        emitter.subscribe('handshake_completed', on_handshake_completed)
+        emitter.subscribe('apdu_received', on_apdu_received)
+        emitter.subscribe('apdu_sent', on_apdu_sent)
+        self._admin_server_event_handler = (on_handshake_completed, on_apdu_received, on_apdu_sent)
+        logger.info("Subscribed to AdminServer events: handshake_completed, apdu_received, apdu_sent")
 
     @property
     def admin_server(self) -> Optional[Any]:
@@ -375,53 +398,80 @@ class DashboardServer:
         return getattr(self._admin_server, 'is_running', False)
 
     async def _handle_server_session_created(self, event: Dict[str, Any]) -> None:
-        """Handle session created event from AdminServer."""
+        """Handle handshake_completed event from AdminServer.
+
+        Event format from AdminServer:
+        {
+            'client_address': '127.0.0.1:12345',
+            'psk_identity': 'test_card',
+            'cipher_suite': 'PSK-AES128-CBC-SHA256',
+            'protocol_version': 'TLSv1.2',
+            'handshake_duration_ms': 5.2,
+        }
+        """
         try:
-            session_id = event.get('session_id', '')
             psk_identity = event.get('psk_identity', '')
-            client_address = event.get('client_address', ('', 0))
+            client_address = event.get('client_address', '')
+            cipher_suite = event.get('cipher_suite', '')
 
             # Create corresponding dashboard session
             session = await self.state.create_session(
-                name=psk_identity or f"Session {session_id[:8]}",
+                name=psk_identity or f"Session {client_address}",
                 psk_identity=psk_identity,
-                client_ip=client_address[0] if client_address else None,
+                client_ip=client_address.split(':')[0] if ':' in client_address else client_address,
+                cipher_suite=cipher_suite,
             )
 
+            logger.info("Dashboard session created: %s (PSK: %s)", session.id, psk_identity)
+
             # Notify WebSocket clients
-            await self._broadcast({
-                'type': 'session_created',
+            await self._broadcast('session_created', {
                 'session': session.to_dict(),
             })
         except Exception as e:
             logger.error("Error handling session created event: %s", e)
 
-    async def _handle_server_apdu_exchange(self, event: Dict[str, Any]) -> None:
-        """Handle APDU exchange event from AdminServer."""
+    async def _handle_server_apdu_received(self, event: Dict[str, Any]) -> None:
+        """Handle apdu_received event from AdminServer (R-APDU from card)."""
         try:
             session_id = event.get('session_id', '')
-            exchange = event.get('exchange', {})
-
-            # Find dashboard session by PSK identity or create new
-            # For now, log the APDU
-            command = exchange.get('command', b'').hex() if isinstance(exchange.get('command'), bytes) else str(exchange.get('command', ''))
-            response = exchange.get('response', b'').hex() if isinstance(exchange.get('response'), bytes) else str(exchange.get('response', ''))
+            apdu = event.get('apdu', b'')
+            apdu_hex = apdu.hex() if isinstance(apdu, bytes) else str(apdu)
 
             # Notify WebSocket clients
-            await self._broadcast({
-                'type': 'apdu_exchange',
+            await self._broadcast('apdu', {
+                'direction': 'response',
                 'sessionId': session_id,
-                'command': command,
-                'response': response,
+                'data': apdu_hex,
                 'timestamp': datetime.now().isoformat(),
             })
         except Exception as e:
-            logger.error("Error handling APDU exchange event: %s", e)
+            logger.error("Error handling APDU received event: %s", e)
+
+    async def _handle_server_apdu_sent(self, event: Dict[str, Any]) -> None:
+        """Handle apdu_sent event from AdminServer (C-APDU to card)."""
+        try:
+            session_id = event.get('session_id', '')
+            apdu = event.get('apdu', b'')
+            apdu_hex = apdu.hex() if isinstance(apdu, bytes) else str(apdu)
+
+            # Notify WebSocket clients
+            await self._broadcast('apdu', {
+                'direction': 'command',
+                'sessionId': session_id,
+                'data': apdu_hex,
+                'timestamp': datetime.now().isoformat(),
+            })
+        except Exception as e:
+            logger.error("Error handling APDU sent event: %s", e)
 
     async def start(self) -> None:
         """Start the server."""
         # Store event loop reference for cross-thread event handling
         self._loop = asyncio.get_event_loop()
+
+        # Subscribe to AdminServer events now that the loop is ready
+        self._subscribe_to_admin_events()
 
         try:
             self._server = await asyncio.start_server(

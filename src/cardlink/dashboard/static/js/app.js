@@ -362,15 +362,70 @@ class DashboardApp {
 
     const statusText = statusEl.querySelector('.header__status-text');
     if (statusText) {
-      statusText.textContent = status.charAt(0).toUpperCase() + status.slice(1);
+      statusText.textContent = 'WS: ' + status.charAt(0).toUpperCase() + status.slice(1);
     }
+  }
+
+  /**
+   * Updates the TLS PSK server status display.
+   * @param {Object} serverStatus - Server status object
+   */
+  updateServerStatus(serverStatus) {
+    const statusEl = document.getElementById('server-status');
+    if (!statusEl) return;
+
+    const isConnected = serverStatus.connected && serverStatus.running;
+    const statusClass = isConnected ? 'connected' : 'disconnected';
+    statusEl.className = `header__status header__status--${statusClass}`;
+
+    const statusText = statusEl.querySelector('.header__status-text');
+    if (statusText) {
+      if (!serverStatus.available) {
+        statusText.textContent = 'Server: N/A';
+      } else if (!serverStatus.connected) {
+        statusText.textContent = 'Server: Not Connected';
+      } else if (!serverStatus.running) {
+        statusText.textContent = 'Server: Stopped';
+      } else {
+        const sessions = serverStatus.activeSessions || 0;
+        statusText.textContent = `Server: ${serverStatus.host}:${serverStatus.port} (${sessions} sessions)`;
+      }
+    }
+  }
+
+  /**
+   * Loads TLS PSK server status.
+   */
+  async loadServerStatus() {
+    try {
+      const status = await api.getServerStatus();
+      this.updateServerStatus(status);
+    } catch (error) {
+      console.error('Failed to load server status:', error);
+      this.updateServerStatus({ available: true, connected: false, running: false });
+    }
+  }
+
+  /**
+   * Starts polling for server status.
+   */
+  startServerStatusPolling() {
+    // Poll every 5 seconds
+    this.serverStatusInterval = setInterval(() => {
+      this.loadServerStatus();
+    }, 5000);
   }
 
   /**
    * Loads initial data.
    */
   async loadInitialData() {
-    await this.loadSessions();
+    await Promise.all([
+      this.loadSessions(),
+      this.loadServerStatus(),
+    ]);
+    // Start polling for server status
+    this.startServerStatusPolling();
   }
 
   /**

@@ -307,22 +307,34 @@ class APDUParseError(HTTPHandlerError):
 class HTTPHandler:
     """Handles GP Amendment B HTTP Admin protocol.
 
-    Parses HTTP requests containing GP Admin protocol data, extracts APDU
-    commands, and builds properly formatted responses.
+    Implements the server-side GP Admin protocol where:
+    - Server sends C-APDUs to the client (card/UICC)
+    - Client responds with R-APDUs
+
+    Protocol flow:
+    1. Client sends initial POST (empty or with agent info)
+    2. Server responds with C-APDU(s) to execute
+    3. Client sends R-APDU responses
+    4. Server sends next C-APDU(s) or 204 No Content when complete
 
     Attributes:
         CONTENT_TYPE: Expected Content-Type header value.
 
     Example:
-        >>> processor = GPCommandProcessor(handlers, emitter)
-        >>> handler = HTTPHandler(processor)
-        >>>
-        >>> # Handle request
+        >>> handler = HTTPHandler(command_processor)
+        >>> handler.queue_commands(session_id, [select_isd, get_data])
         >>> response = handler.handle_request(ssl_socket, session)
         >>> ssl_socket.sendall(response.to_bytes())
     """
 
     CONTENT_TYPE = CONTENT_TYPE_GP_ADMIN
+
+    # Demo C-APDUs for testing (SELECT ISD, GET DATA Card Data)
+    DEMO_COMMANDS = [
+        bytes.fromhex("00A4040000"),  # SELECT ISD (no data)
+        bytes.fromhex("80CA006600"),  # GET DATA - Card Data
+        bytes.fromhex("80CA004F00"),  # GET DATA - Card Manager AID
+    ]
 
     def __init__(
         self,
@@ -337,6 +349,55 @@ class HTTPHandler:
         """
         self._command_processor = command_processor
         self._read_timeout = read_timeout
+        # Command queue: session_id -> list of C-APDUs to send
+        self._command_queues: Dict[str, List[bytes]] = {}
+        # Track session state: session_id -> request count
+        self._session_requests: Dict[str, int] = {}
+
+    def queue_commands(self, session_id: str, commands: List[bytes]) -> None:
+        """Queue C-APDU commands to send to a session.
+
+        Args:
+            session_id: Session identifier.
+            commands: List of C-APDU bytes to send.
+        """
+        if session_id not in self._command_queues:
+            self._command_queues[session_id] = []
+        self._command_queues[session_id].extend(commands)
+
+    def get_next_command(self, session_id: str) -> Optional[bytes]:
+        """Get next queued C-APDU for a session.
+
+        Args:
+            session_id: Session identifier.
+
+        Returns:
+            Next C-APDU bytes, or None if queue is empty.
+        """
+        queue = self._command_queues.get(session_id, [])
+        if queue:
+            return queue.pop(0)
+        return None
+
+    def has_pending_commands(self, session_id: str) -> bool:
+        """Check if session has pending C-APDUs.
+
+        Args:
+            session_id: Session identifier.
+
+        Returns:
+            True if commands are queued.
+        """
+        return bool(self._command_queues.get(session_id))
+
+    def clear_session(self, session_id: str) -> None:
+        """Clear all data for a session.
+
+        Args:
+            session_id: Session identifier.
+        """
+        self._command_queues.pop(session_id, None)
+        self._session_requests.pop(session_id, None)
 
     def handle_request(
         self,
@@ -345,8 +406,9 @@ class HTTPHandler:
     ) -> HTTPResponse:
         """Read HTTP request, process, and return response.
 
-        Reads a complete HTTP request from the socket, parses it,
-        processes any APDU commands, and returns the response.
+        Implements GP Admin protocol flow:
+        - Initial POST (empty body): Server sends first C-APDU(s)
+        - Subsequent POST (R-APDU body): Server sends next C-APDU(s) or 204
 
         Args:
             ssl_socket: SSL-wrapped socket to read from.
@@ -363,11 +425,14 @@ class HTTPHandler:
             raw_request = self._read_request(ssl_socket)
             http_request = self.parse_http_request(raw_request)
 
+            session_id = session.session_id if session else "unknown"
+
             logger.debug(
-                "HTTP request: method=%s, path=%s, session=%s",
+                "HTTP request: method=%s, path=%s, session=%s, body_len=%d",
                 http_request.method,
                 http_request.path,
-                session.session_id if session else "none",
+                session_id,
+                len(http_request.body),
             )
 
             # Validate method (POST is required for Admin protocol)
@@ -377,30 +442,58 @@ class HTTPHandler:
                     "GP Admin protocol requires POST method",
                 )
 
-            # Parse GP Admin request
-            admin_request = self.parse_admin_request(http_request)
+            # Track request count for this session
+            request_num = self._session_requests.get(session_id, 0) + 1
+            self._session_requests[session_id] = request_num
 
-            # Process each APDU command
-            apdu_responses: List[APDUResponse] = []
-            for apdu_bytes in admin_request.apdus:
-                # Parse APDU
-                apdu = self.parse_apdu(apdu_bytes)
+            # Check if this is initial request (empty body)
+            is_initial_request = len(http_request.body) == 0
 
-                logger.debug(
-                    "Processing APDU: %s (INS=%02X), session=%s",
-                    apdu.command_name,
-                    apdu.ins,
-                    session.session_id if session else "none",
-                )
+            if is_initial_request:
+                logger.debug("Initial request from session %s", session_id)
+                # Queue demo commands if no commands already queued
+                if not self.has_pending_commands(session_id):
+                    self.queue_commands(session_id, self.DEMO_COMMANDS.copy())
+                    logger.debug(
+                        "Queued %d demo commands for session %s",
+                        len(self.DEMO_COMMANDS),
+                        session_id,
+                    )
+            else:
+                # Parse R-APDU response from client
+                try:
+                    r_apdus = self._extract_apdus(http_request.body)
+                    for r_apdu in r_apdus:
+                        logger.debug(
+                            "Received R-APDU: %s (session=%s)",
+                            r_apdu.hex().upper(),
+                            session_id,
+                        )
+                        # Could process R-APDU here if needed
+                except InvalidRequestError:
+                    # If body doesn't parse as APDUs, log but continue
+                    logger.debug(
+                        "Body not parseable as APDUs, treating as raw: %s",
+                        http_request.body.hex().upper()[:40],
+                    )
 
-                # Process command
-                response = self._command_processor.process_command(apdu, session)
-                apdu_responses.append(response)
+            # Get next C-APDU(s) to send
+            next_command = self.get_next_command(session_id)
 
-            # Build response
-            return self.build_admin_response(
-                apdu_responses,
-                keep_alive=admin_request.is_keep_alive,
+            if next_command is None:
+                # No more commands - session complete
+                logger.info("Session %s complete (no more commands)", session_id)
+                return self.build_session_complete_response()
+
+            # Build response with C-APDU
+            logger.debug(
+                "Sending C-APDU to session %s: %s",
+                session_id,
+                next_command.hex().upper(),
+            )
+            return self.build_command_response(
+                [next_command],
+                keep_alive=True,
             )
 
         except ContentTypeError as e:
@@ -846,6 +939,56 @@ class HTTPHandler:
             status_code=204,  # No Content
             headers=headers,
             body=b"",
+        )
+
+    def build_command_response(
+        self,
+        commands: List[bytes],
+        keep_alive: bool = True,
+        next_uri: Optional[str] = None,
+        targeted_application: Optional[str] = None,
+    ) -> HTTPResponse:
+        """Build GP Admin HTTP response containing C-APDU commands.
+
+        Builds a response with C-APDU commands for the client to execute.
+        Format: For each command, Length (2 bytes big-endian) + C-APDU bytes.
+
+        Args:
+            commands: List of C-APDU command bytes to send.
+            keep_alive: Whether to keep connection alive.
+            next_uri: URI for client's next request.
+            targeted_application: Target Security Domain AID.
+
+        Returns:
+            HTTPResponse with C-APDU(s) in body.
+        """
+        # Build body with length-prefixed C-APDUs
+        body = bytearray()
+        for cmd in commands:
+            length = len(cmd)
+            body.append((length >> 8) & 0xFF)
+            body.append(length & 0xFF)
+            body.extend(cmd)
+
+        # Build headers per GP Amendment B spec
+        headers = {
+            "Content-Type": CONTENT_TYPE_GP_ADMIN,
+            "Content-Length": str(len(body)),
+            "X-Admin-Protocol": GP_ADMIN_PROTOCOL,
+            "Connection": "keep-alive" if keep_alive else "close",
+            "Date": datetime.utcnow().strftime("%a, %d %b %Y %H:%M:%S GMT"),
+        }
+
+        # Add optional GP Admin headers
+        if next_uri:
+            headers["X-Admin-Next-URI"] = next_uri
+        if targeted_application:
+            headers["X-Admin-Targeted-Application"] = targeted_application
+
+        return HTTPResponse(
+            status_code=HTTPStatus.OK,
+            headers=headers,
+            body=bytes(body),
         )
 
     def _build_response_body(self, apdu_responses: List[APDUResponse]) -> bytes:

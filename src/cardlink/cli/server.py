@@ -14,10 +14,12 @@ Environment Variables:
     GP_OTA_SERVER_CONFIG: Default configuration file path
 """
 
+import asyncio
 import logging
 import os
 import signal
 import sys
+import threading
 import time
 from pathlib import Path
 from typing import Any, Dict, Optional
@@ -34,6 +36,15 @@ from cardlink.server import (
     ServerConfig,
     HAS_PSK_SUPPORT,
 )
+
+# Dashboard integration (optional)
+try:
+    from cardlink.dashboard import DashboardServer, DashboardConfig
+    DASHBOARD_AVAILABLE = True
+except ImportError:
+    DASHBOARD_AVAILABLE = False
+    DashboardServer = None
+    DashboardConfig = None
 
 logger = logging.getLogger(__name__)
 
@@ -232,6 +243,12 @@ def cli(ctx: click.Context, verbose: bool, debug: bool) -> None:
     help="Enable web dashboard for server monitoring (requires dashboard module installation)",
 )
 @click.option(
+    "--dashboard-port",
+    default=8080,
+    type=int,
+    help="Port for web dashboard (default: 8080, only used with --dashboard)",
+)
+@click.option(
     "--foreground", "-f",
     is_flag=True,
     help="Run server in foreground with console output instead of backgrounding (useful for debugging)",
@@ -249,6 +266,7 @@ def start(
     session_timeout: float,
     handshake_timeout: float,
     dashboard: bool,
+    dashboard_port: int,
     foreground: bool,
 ) -> None:
     """Start the PSK-TLS Admin Server.
@@ -393,9 +411,57 @@ def start(
         sys.exit(1)
 
     # Start server
+    dashboard_server = None
+    dashboard_thread = None
+
     try:
         click.echo(f"Starting PSK-TLS Admin Server on {host}:{port}...")
         server.start()
+
+        # Start dashboard if requested
+        if dashboard:
+            if not DASHBOARD_AVAILABLE:
+                click.echo(click.style(
+                    "Warning: Dashboard module not installed. "
+                    "Install with: pip install cardlink[dashboard]",
+                    fg="yellow",
+                ))
+            else:
+                try:
+                    dashboard_config = DashboardConfig(
+                        host=host if host != "0.0.0.0" else "127.0.0.1",
+                        port=dashboard_port,
+                    )
+                    dashboard_server = DashboardServer(dashboard_config)
+                    dashboard_server.set_admin_server(server)
+
+                    # Run dashboard in a separate thread with its own event loop
+                    def run_dashboard():
+                        loop = asyncio.new_event_loop()
+                        asyncio.set_event_loop(loop)
+                        try:
+                            loop.run_until_complete(dashboard_server.start())
+                        except Exception as e:
+                            logger.error("Dashboard error: %s", e)
+                        finally:
+                            loop.close()
+
+                    dashboard_thread = threading.Thread(
+                        target=run_dashboard,
+                        daemon=True,
+                        name="dashboard-server",
+                    )
+                    dashboard_thread.start()
+
+                    click.echo(click.style(
+                        f"Dashboard started at http://{dashboard_config.host}:{dashboard_port}",
+                        fg="cyan",
+                    ))
+                except Exception as e:
+                    click.echo(click.style(
+                        f"Warning: Failed to start dashboard: {e}",
+                        fg="yellow",
+                    ))
 
         # Write PID file
         _write_pid_file(os.getpid())

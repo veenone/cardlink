@@ -374,6 +374,38 @@ class HTTPAdminClient:
 
         return response
 
+    def _extract_first_apdu(self, body: bytes) -> bytes:
+        """Extract first C-APDU from length-prefixed body.
+
+        GP Admin format uses length-prefixed APDUs:
+        [length (2 bytes big-endian)] [APDU bytes] ...
+
+        Args:
+            body: Response body with length-prefixed APDUs.
+
+        Returns:
+            First C-APDU bytes, or empty bytes if body is empty.
+        """
+        if len(body) < 2:
+            # Body too short for length prefix, return as-is
+            return body
+
+        # Read length prefix (2 bytes, big-endian)
+        length = (body[0] << 8) | body[1]
+
+        if length == 0:
+            return b""
+
+        if len(body) < 2 + length:
+            # Not enough data, return what we have after prefix
+            logger.warning(
+                f"Body length mismatch: expected {length}, got {len(body) - 2}"
+            )
+            return body[2:]
+
+        # Extract APDU
+        return body[2:2 + length]
+
     async def initial_request(self) -> bytes:
         """Send initial empty request, receive first C-APDU.
 
@@ -399,12 +431,28 @@ class HTTPAdminClient:
 
         # Check status
         if status_code == 200:
-            return body
+            # Parse length-prefixed C-APDU
+            c_apdu = self._extract_first_apdu(body)
+            if c_apdu:
+                logger.debug(f"Received C-APDU: {c_apdu.hex().upper()}")
+            return c_apdu
         elif status_code == 204:
             # Session complete immediately (unusual but valid)
             return b""
         else:
             raise HTTPStatusError(status_code, "Server error", body)
+
+    def _build_length_prefixed_apdu(self, r_apdu: bytes) -> bytes:
+        """Build length-prefixed R-APDU for sending.
+
+        Args:
+            r_apdu: Raw R-APDU bytes.
+
+        Returns:
+            Length-prefixed R-APDU.
+        """
+        length = len(r_apdu)
+        return bytes([(length >> 8) & 0xFF, length & 0xFF]) + r_apdu
 
     async def send_response(self, r_apdu: bytes) -> Optional[bytes]:
         """Send R-APDU and receive next C-APDU.
@@ -426,8 +474,11 @@ class HTTPAdminClient:
         """
         logger.debug(f"Sending R-APDU: {r_apdu.hex().upper()}")
 
+        # Build length-prefixed R-APDU body
+        body = self._build_length_prefixed_apdu(r_apdu)
+
         # Build and send POST with R-APDU
-        request = self.build_request(r_apdu)
+        request = self.build_request(body)
         await self.tls_client.send(request)
         self._request_count += 1
 
@@ -439,9 +490,11 @@ class HTTPAdminClient:
 
         # Check status
         if status_code == 200:
-            if body:
-                logger.debug(f"Received C-APDU: {body.hex().upper()}")
-            return body
+            # Parse length-prefixed C-APDU
+            c_apdu = self._extract_first_apdu(body)
+            if c_apdu:
+                logger.debug(f"Received C-APDU: {c_apdu.hex().upper()}")
+            return c_apdu
         elif status_code == 204:
             logger.info("Session complete (204 No Content)")
             return None

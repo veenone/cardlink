@@ -399,6 +399,34 @@ export function createAPIClient(config = {}) {
     sendSimulatorSMS(smsData) {
       return this.post('/simulator/sms/send', smsData);
     },
+
+    // =========================================================================
+    // TLS PSK Server Endpoints
+    // =========================================================================
+
+    /**
+     * Gets TLS PSK server status.
+     * @returns {Promise<Object>} Server status including running state, host, port, session counts
+     */
+    getServerStatus() {
+      return this.get('/server/status');
+    },
+
+    /**
+     * Gets sessions from TLS PSK server.
+     * @returns {Promise<Object[]>} Server sessions with state, PSK identity, client address
+     */
+    getServerSessions() {
+      return this.get('/server/sessions');
+    },
+
+    /**
+     * Gets TLS PSK server configuration.
+     * @returns {Promise<Object>} Server configuration including cipher config
+     */
+    getServerConfig() {
+      return this.get('/server/config');
+    },
   };
 }
 
