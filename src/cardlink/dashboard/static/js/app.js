@@ -13,6 +13,7 @@ import { createApduLog } from './components/apdu-log.js';
 import { createSessionPanel } from './components/session-panel.js';
 import { createCommandBuilder } from './components/command-builder.js';
 import { createSimulatorPanel } from './components/simulator-panel.js';
+import { createCommLog } from './components/comm-log.js';
 import { debounce } from './utils/time.js';
 import { getTooltipController } from './utils/tooltip.js';
 
@@ -136,6 +137,30 @@ class DashboardApp {
     const simulatorContainer = document.getElementById('simulator-panel-container');
     if (simulatorContainer) {
       this.components.simulatorPanel = createSimulatorPanel(simulatorContainer);
+    }
+
+    // Communication log
+    const commLogContainer = document.getElementById('comm-log-content');
+    const commLogEmpty = document.getElementById('comm-log-empty');
+    const commLogCount = document.getElementById('comm-log-count');
+    if (commLogContainer && commLogEmpty && commLogCount) {
+      this.components.commLog = createCommLog({
+        container: commLogContainer,
+        emptyState: commLogEmpty,
+        countEl: commLogCount,
+      });
+
+      // Setup comm log header toggle
+      const commLogHeader = document.querySelector('.comm-log__header');
+      const commLogBody = document.getElementById('comm-log-body');
+      const commLogToggle = document.querySelector('.comm-log__toggle');
+
+      commLogHeader?.addEventListener('click', () => {
+        const isExpanded = commLogHeader.getAttribute('aria-expanded') === 'true';
+        commLogHeader.setAttribute('aria-expanded', String(!isExpanded));
+        commLogBody?.classList.toggle('hidden', isExpanded);
+        commLogToggle?.classList.toggle('comm-log__toggle--collapsed', isExpanded);
+      });
     }
   }
 
@@ -543,6 +568,7 @@ class DashboardApp {
   clearLogs() {
     state.clearApdus();
     this.components.apduLog.clear();
+    this.components.commLog?.clear();
     this.components.toast.info('Logs cleared');
   }
 

@@ -195,6 +195,61 @@
           </div>
         </section>
 
+        <!-- Communication Log -->
+        <section class="comm-log" aria-labelledby="comm-log-title">
+          <div class="comm-log__header" role="button" tabindex="0" aria-expanded="true" aria-controls="comm-log-body">
+            <h3 id="comm-log-title" class="comm-log__title">
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+                <path d="M2 4h12M2 8h8M2 12h10"/>
+              </svg>
+              Communication Log
+            </h3>
+            <div class="comm-log__info">
+              <span id="comm-log-count" class="text-xs text-secondary">0 exchanges</span>
+            </div>
+            <svg class="comm-log__toggle" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+              <path d="M4 6l4 4 4-4"/>
+            </svg>
+          </div>
+
+          <div id="comm-log-body" class="comm-log__body">
+            <div class="comm-log__legend">
+              <span class="comm-log__legend-item comm-log__legend-item--server">
+                <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor">
+                  <rect x="1" y="2" width="10" height="8" rx="1"/>
+                </svg>
+                Server (C-APDU)
+              </span>
+              <span class="comm-log__legend-arrow">
+                <svg width="20" height="12" viewBox="0 0 20 12" fill="none" stroke="currentColor" stroke-width="1.5">
+                  <path d="M0 6h18M14 2l4 4-4 4"/>
+                </svg>
+              </span>
+              <span class="comm-log__legend-item comm-log__legend-item--client">
+                <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor">
+                  <rect x="2" y="1" width="8" height="10" rx="1"/>
+                </svg>
+                Client (R-APDU)
+              </span>
+            </div>
+
+            <div id="comm-log-container" class="comm-log__container">
+              <div id="comm-log-empty" class="comm-log__empty">
+                <svg class="comm-log__empty-icon" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="1.5">
+                  <path d="M8 16h14v8H8zM26 24h14v8H26z"/>
+                  <path d="M22 20h4M22 28h4" stroke-dasharray="2 2"/>
+                </svg>
+                <p class="text-sm">No communication exchanges</p>
+                <p class="text-xs mt-1">Select a session to view APDU exchanges</p>
+              </div>
+
+              <div id="comm-log-content" class="comm-log__content hidden">
+                <!-- Communication entries will be rendered here -->
+              </div>
+            </div>
+          </div>
+        </section>
+
         <!-- Command Builder -->
         <section class="command-builder" aria-labelledby="command-builder-title">
           <div class="command-builder__header" role="button" tabindex="0" aria-expanded="true" aria-controls="command-builder-body">
