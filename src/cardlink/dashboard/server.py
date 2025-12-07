@@ -185,6 +185,17 @@ class DashboardState:
         """Get a session by ID."""
         return self.sessions.get(session_id)
 
+    async def get_session_by_psk_identity(self, psk_identity: str) -> Optional[Session]:
+        """Get a session by PSK identity.
+
+        This is used to map APDU events (which use PSK identity as session_id)
+        to dashboard sessions (which use a random UUID as session ID).
+        """
+        for session in self.sessions.values():
+            if session.psk_identity == psk_identity:
+                return session
+        return None
+
     async def get_sessions(self) -> List[Session]:
         """Get all sessions."""
         return list(self.sessions.values())
@@ -434,16 +445,42 @@ class DashboardServer:
     async def _handle_server_apdu_received(self, event: Dict[str, Any]) -> None:
         """Handle apdu_received event from AdminServer (R-APDU from card)."""
         try:
-            session_id = event.get('session_id', '')
+            # Get PSK identity from the event (added by HTTPHandler)
+            psk_identity = event.get('psk_identity', '')
             apdu = event.get('apdu', b'')
-            apdu_hex = apdu.hex() if isinstance(apdu, bytes) else str(apdu)
+            apdu_hex = apdu.hex().upper() if isinstance(apdu, bytes) else str(apdu).upper()
+
+            # Look up the dashboard session by PSK identity
+            session = await self.state.get_session_by_psk_identity(psk_identity)
+            if not session:
+                logger.warning("No session found for PSK identity: %s", psk_identity)
+                return
+
+            # Parse R-APDU: response data + SW (last 2 bytes / 4 hex chars)
+            sw = ''
+            response_data = ''
+            if len(apdu_hex) >= 4:
+                sw = apdu_hex[-4:]
+                response_data = apdu_hex[:-4] if len(apdu_hex) > 4 else ''
+
+            # Store APDU for later retrieval (use actual session ID)
+            await self.state.add_apdu(
+                session_id=session.id,
+                direction='response',
+                data=apdu_hex,
+                sw=sw,
+                response_data=response_data,
+            )
 
             # Notify WebSocket clients
             await self._broadcast('apdu', {
+                'id': str(uuid.uuid4()),
                 'direction': 'response',
-                'sessionId': session_id,
+                'sessionId': session.id,
                 'data': apdu_hex,
-                'timestamp': datetime.now().isoformat(),
+                'sw': sw,
+                'responseData': response_data,
+                'timestamp': int(datetime.now().timestamp() * 1000),
             })
         except Exception as e:
             logger.error("Error handling APDU received event: %s", e)
@@ -451,16 +488,31 @@ class DashboardServer:
     async def _handle_server_apdu_sent(self, event: Dict[str, Any]) -> None:
         """Handle apdu_sent event from AdminServer (C-APDU to card)."""
         try:
-            session_id = event.get('session_id', '')
+            # Get PSK identity from the event (added by HTTPHandler)
+            psk_identity = event.get('psk_identity', '')
             apdu = event.get('apdu', b'')
-            apdu_hex = apdu.hex() if isinstance(apdu, bytes) else str(apdu)
+            apdu_hex = apdu.hex().upper() if isinstance(apdu, bytes) else str(apdu).upper()
+
+            # Look up the dashboard session by PSK identity
+            session = await self.state.get_session_by_psk_identity(psk_identity)
+            if not session:
+                logger.warning("No session found for PSK identity: %s", psk_identity)
+                return
+
+            # Store APDU for later retrieval (use actual session ID)
+            await self.state.add_apdu(
+                session_id=session.id,
+                direction='command',
+                data=apdu_hex,
+            )
 
             # Notify WebSocket clients
             await self._broadcast('apdu', {
+                'id': str(uuid.uuid4()),
                 'direction': 'command',
-                'sessionId': session_id,
+                'sessionId': session.id,
                 'data': apdu_hex,
-                'timestamp': datetime.now().isoformat(),
+                'timestamp': int(datetime.now().timestamp() * 1000),
             })
         except Exception as e:
             logger.error("Error handling APDU sent event: %s", e)

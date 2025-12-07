@@ -37,6 +37,12 @@ from typing import Any, Dict, List, Optional, Tuple, TYPE_CHECKING
 if TYPE_CHECKING:
     from cardlink.server.models import Session
 
+from cardlink.server.event_emitter import (
+    EVENT_APDU_RECEIVED,
+    EVENT_APDU_SENT,
+    EventEmitter,
+)
+
 logger = logging.getLogger(__name__)
 
 
@@ -340,15 +346,18 @@ class HTTPHandler:
         self,
         command_processor: Any,
         read_timeout: float = DEFAULT_READ_TIMEOUT,
+        event_emitter: Optional[EventEmitter] = None,
     ) -> None:
         """Initialize HTTP Handler.
 
         Args:
             command_processor: GPCommandProcessor for processing APDUs.
             read_timeout: Socket read timeout in seconds.
+            event_emitter: Optional event emitter for APDU events.
         """
         self._command_processor = command_processor
         self._read_timeout = read_timeout
+        self._event_emitter = event_emitter
         # Command queue: session_id -> list of C-APDUs to send
         self._command_queues: Dict[str, List[bytes]] = {}
         # Track session state: session_id -> request count
@@ -426,6 +435,7 @@ class HTTPHandler:
             http_request = self.parse_http_request(raw_request)
 
             session_id = session.session_id if session else "unknown"
+            psk_identity = session.metadata.get("psk_identity", "") if session and session.metadata else ""
 
             logger.debug(
                 "HTTP request: method=%s, path=%s, session=%s, body_len=%d",
@@ -469,7 +479,13 @@ class HTTPHandler:
                             r_apdu.hex().upper(),
                             session_id,
                         )
-                        # Could process R-APDU here if needed
+                        # Emit event for dashboard
+                        if self._event_emitter:
+                            self._event_emitter.emit(EVENT_APDU_RECEIVED, {
+                                "session_id": session_id,
+                                "psk_identity": psk_identity,
+                                "apdu": r_apdu,
+                            })
                 except InvalidRequestError:
                     # If body doesn't parse as APDUs, log but continue
                     logger.debug(
@@ -491,6 +507,15 @@ class HTTPHandler:
                 session_id,
                 next_command.hex().upper(),
             )
+
+            # Emit event for dashboard
+            if self._event_emitter:
+                self._event_emitter.emit(EVENT_APDU_SENT, {
+                    "session_id": session_id,
+                    "psk_identity": psk_identity,
+                    "apdu": next_command,
+                })
+
             return self.build_command_response(
                 [next_command],
                 keep_alive=True,

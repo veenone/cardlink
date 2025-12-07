@@ -666,6 +666,7 @@ class GPCommandProcessor:
                 EVENT_APDU_RECEIVED,
                 {
                     "session_id": session_id,
+                    "apdu": apdu.raw if apdu.raw else b"",
                     "command_name": apdu.command_name,
                     "ins": apdu.ins,
                     "cla": apdu.cla,
@@ -704,6 +705,7 @@ class GPCommandProcessor:
                 EVENT_APDU_SENT,
                 {
                     "session_id": session_id,
+                    "apdu": response.to_bytes(),
                     "command_name": apdu.command_name,
                     "ins": apdu.ins,
                     "sw1": response.sw1,

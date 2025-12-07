@@ -154,6 +154,7 @@ class AdminServer:
         self._http_handler = HTTPHandler(
             command_processor=self._command_processor,
             read_timeout=config.read_timeout,
+            event_emitter=event_emitter,
         )
 
         # Server state
