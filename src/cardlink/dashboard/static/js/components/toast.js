@@ -4,6 +4,40 @@
  * Manages toast notifications.
  */
 
+// Singleton toast manager for global use
+let globalToastManager = null;
+
+/**
+ * Gets or creates the global toast manager.
+ * @returns {Object|null} Toast manager or null if container not found
+ */
+function getGlobalToastManager() {
+  if (!globalToastManager) {
+    const container = document.getElementById('toast-container');
+    if (container) {
+      globalToastManager = createToastManager(container);
+    }
+  }
+  return globalToastManager;
+}
+
+/**
+ * Shows a toast notification using the global toast manager.
+ * This is a convenience function for components that need simple toast access.
+ * @param {string} message - Toast message
+ * @param {string} [type='info'] - Toast type (info, success, warning, error)
+ * @param {number} [duration] - Optional duration in ms
+ * @returns {number|undefined} Toast ID if shown
+ */
+export function showToast(message, type = 'info', duration) {
+  const manager = getGlobalToastManager();
+  if (!manager) {
+    console.warn('Toast container not found, cannot show toast:', message);
+    return;
+  }
+  return manager.show({ message, type, duration });
+}
+
 /**
  * Creates a toast manager instance.
  * @param {HTMLElement} container - Toast container element

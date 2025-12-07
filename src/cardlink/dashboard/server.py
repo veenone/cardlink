@@ -48,6 +48,16 @@ except ImportError:
     TLSConfig = None
     NotConnectedError = Exception
 
+# Import AdminServer components (optional - for embedded mode)
+try:
+    from cardlink.server import AdminServer
+    from cardlink.server.models import SessionState
+    ADMIN_SERVER_AVAILABLE = True
+except ImportError:
+    ADMIN_SERVER_AVAILABLE = False
+    AdminServer = None
+    SessionState = None
+
 logger = logging.getLogger(__name__)
 
 # Get the static files directory
@@ -301,8 +311,118 @@ class DashboardServer:
         self._simulator_events: List[Dict[str, Any]] = []
         self._max_events = 1000  # Max events to keep in memory
 
+        # TLS PSK Admin Server integration
+        self._admin_server: Optional[Any] = None  # AdminServer instance
+        self._admin_server_event_handler = None
+
+        # Event loop reference for cross-thread event handling
+        self._loop: Optional[asyncio.AbstractEventLoop] = None
+
+    def set_admin_server(self, admin_server: Any) -> None:
+        """Set the AdminServer instance for dashboard integration.
+
+        When set, the dashboard will display real-time session and APDU
+        data from the PSK-TLS server.
+
+        Args:
+            admin_server: AdminServer instance to connect to.
+        """
+        if not ADMIN_SERVER_AVAILABLE:
+            logger.warning("AdminServer module not available")
+            return
+
+        self._admin_server = admin_server
+        logger.info("Dashboard connected to AdminServer")
+
+        # Subscribe to server events
+        if hasattr(admin_server, '_event_emitter') and admin_server._event_emitter:
+            emitter = admin_server._event_emitter
+
+            def on_session_created(event):
+                # Use thread-safe scheduling since this may be called from AdminServer thread
+                if self._loop and self._loop.is_running():
+                    asyncio.run_coroutine_threadsafe(
+                        self._handle_server_session_created(event),
+                        self._loop
+                    )
+                else:
+                    logger.debug("Dashboard event loop not available for session event")
+
+            def on_apdu_exchange(event):
+                # Use thread-safe scheduling since this may be called from AdminServer thread
+                if self._loop and self._loop.is_running():
+                    asyncio.run_coroutine_threadsafe(
+                        self._handle_server_apdu_exchange(event),
+                        self._loop
+                    )
+                else:
+                    logger.debug("Dashboard event loop not available for APDU event")
+
+            emitter.subscribe('session_created', on_session_created)
+            emitter.subscribe('apdu_exchange', on_apdu_exchange)
+            self._admin_server_event_handler = (on_session_created, on_apdu_exchange)
+
+    @property
+    def admin_server(self) -> Optional[Any]:
+        """Get connected AdminServer instance."""
+        return self._admin_server
+
+    @property
+    def is_server_connected(self) -> bool:
+        """Check if AdminServer is connected and running."""
+        if not self._admin_server:
+            return False
+        return getattr(self._admin_server, 'is_running', False)
+
+    async def _handle_server_session_created(self, event: Dict[str, Any]) -> None:
+        """Handle session created event from AdminServer."""
+        try:
+            session_id = event.get('session_id', '')
+            psk_identity = event.get('psk_identity', '')
+            client_address = event.get('client_address', ('', 0))
+
+            # Create corresponding dashboard session
+            session = await self.state.create_session(
+                name=psk_identity or f"Session {session_id[:8]}",
+                psk_identity=psk_identity,
+                client_ip=client_address[0] if client_address else None,
+            )
+
+            # Notify WebSocket clients
+            await self._broadcast({
+                'type': 'session_created',
+                'session': session.to_dict(),
+            })
+        except Exception as e:
+            logger.error("Error handling session created event: %s", e)
+
+    async def _handle_server_apdu_exchange(self, event: Dict[str, Any]) -> None:
+        """Handle APDU exchange event from AdminServer."""
+        try:
+            session_id = event.get('session_id', '')
+            exchange = event.get('exchange', {})
+
+            # Find dashboard session by PSK identity or create new
+            # For now, log the APDU
+            command = exchange.get('command', b'').hex() if isinstance(exchange.get('command'), bytes) else str(exchange.get('command', ''))
+            response = exchange.get('response', b'').hex() if isinstance(exchange.get('response'), bytes) else str(exchange.get('response', ''))
+
+            # Notify WebSocket clients
+            await self._broadcast({
+                'type': 'apdu_exchange',
+                'sessionId': session_id,
+                'command': command,
+                'response': response,
+                'timestamp': datetime.now().isoformat(),
+            })
+        except Exception as e:
+            logger.error("Error handling APDU exchange event: %s", e)
+
     async def start(self) -> None:
         """Start the server."""
+        # Store event loop reference for cross-thread event handling
+        self._loop = asyncio.get_event_loop()
+
         try:
             self._server = await asyncio.start_server(
                 self._handle_connection,
@@ -521,6 +641,8 @@ class DashboardServer:
                 "clients": len(self._clients),
                 "simulator_available": NETSIM_AVAILABLE,
                 "simulator_connected": self._simulator is not None and self._simulator.is_connected,
+                "server_available": ADMIN_SERVER_AVAILABLE,
+                "server_connected": self.is_server_connected,
             }
 
         # =====================================================================
@@ -563,12 +685,48 @@ class DashboardServer:
             if method == "POST":
                 response, status = await self._send_simulator_sms(data)
 
+        # =====================================================================
+        # TLS PSK Server API
+        # =====================================================================
+
+        elif path == "/api/server/status":
+            if method == "GET":
+                response = await self._get_server_status()
+
+        elif path == "/api/server/sessions":
+            if method == "GET":
+                response, status = await self._get_server_sessions()
+
+        elif path == "/api/server/config":
+            if method == "GET":
+                response = await self._get_server_config()
+
         else:
             status = 404
             response = {"error": "Not found"}
 
         # Send response
         await self._send_json_response(writer, response, status)
+
+    # Explicit MIME type mapping for ES modules and common web files
+    MIME_TYPES = {
+        ".js": "text/javascript",
+        ".mjs": "text/javascript",
+        ".css": "text/css",
+        ".html": "text/html",
+        ".htm": "text/html",
+        ".json": "application/json",
+        ".svg": "image/svg+xml",
+        ".png": "image/png",
+        ".jpg": "image/jpeg",
+        ".jpeg": "image/jpeg",
+        ".gif": "image/gif",
+        ".ico": "image/x-icon",
+        ".woff": "font/woff",
+        ".woff2": "font/woff2",
+        ".ttf": "font/ttf",
+        ".eot": "application/vnd.ms-fontobject",
+    }
 
     async def _serve_static(
         self, path: str, writer: asyncio.StreamWriter
@@ -593,8 +751,11 @@ class DashboardServer:
             await self._send_error(writer, 404, "Not found")
             return
 
-        # Determine content type
-        content_type, _ = mimetypes.guess_type(str(file_path))
+        # Determine content type - use explicit mapping first for ES module compatibility
+        suffix = file_path.suffix.lower()
+        content_type = self.MIME_TYPES.get(suffix)
+        if content_type is None:
+            content_type, _ = mimetypes.guess_type(str(file_path))
         if content_type is None:
             content_type = "application/octet-stream"
 
@@ -806,6 +967,122 @@ class DashboardServer:
             callback: Function to call when APDU is received.
         """
         self._apdu_callbacks.append(callback)
+
+    # =========================================================================
+    # TLS PSK Server API Implementation
+    # =========================================================================
+
+    async def _get_server_status(self) -> Dict[str, Any]:
+        """Get TLS PSK Admin Server status."""
+        if not ADMIN_SERVER_AVAILABLE:
+            return {
+                "available": False,
+                "connected": False,
+                "running": False,
+                "error": "AdminServer module not installed",
+            }
+
+        if self._admin_server is None:
+            return {
+                "available": True,
+                "connected": False,
+                "running": False,
+                "message": "Dashboard not connected to server. Start with: gp-server start --dashboard",
+            }
+
+        try:
+            is_running = getattr(self._admin_server, 'is_running', False)
+            config = getattr(self._admin_server, 'config', None)
+
+            # Get session counts from session manager
+            session_manager = getattr(self._admin_server, '_session_manager', None)
+            active_sessions = 0
+            total_sessions = 0
+            if session_manager:
+                active_sessions = session_manager.get_active_session_count()
+                total_sessions = session_manager.get_session_count()
+
+            return {
+                "available": True,
+                "connected": True,
+                "running": is_running,
+                "host": config.host if config else None,
+                "port": config.port if config else None,
+                "activeSessions": active_sessions,
+                "totalSessions": total_sessions,
+            }
+        except Exception as e:
+            logger.error("Failed to get server status: %s", e)
+            return {
+                "available": True,
+                "connected": True,
+                "running": False,
+                "error": str(e),
+            }
+
+    async def _get_server_sessions(self) -> tuple:
+        """Get sessions from TLS PSK Admin Server."""
+        if not self._admin_server:
+            return {"error": "Server not connected"}, 503
+
+        try:
+            session_manager = getattr(self._admin_server, '_session_manager', None)
+            if not session_manager:
+                return {"error": "Session manager not available"}, 500
+
+            sessions = session_manager.get_all_sessions()
+            result = []
+            for session in sessions:
+                result.append({
+                    "id": session.session_id,
+                    "state": session.state.name if hasattr(session.state, 'name') else str(session.state),
+                    "pskIdentity": session.psk_identity,
+                    "clientAddress": list(session.client_address) if session.client_address else None,
+                    "createdAt": session.created_at.isoformat() if session.created_at else None,
+                    "lastActivity": session.last_activity.isoformat() if session.last_activity else None,
+                    "exchangeCount": len(session.apdu_exchanges) if hasattr(session, 'apdu_exchanges') else 0,
+                    "tlsInfo": {
+                        "cipher": session.tls_info.cipher_suite if session.tls_info else None,
+                        "version": session.tls_info.protocol_version if session.tls_info else None,
+                    } if session.tls_info else None,
+                })
+
+            return result, 200
+        except Exception as e:
+            logger.error("Failed to get server sessions: %s", e)
+            return {"error": str(e)}, 500
+
+    async def _get_server_config(self) -> Dict[str, Any]:
+        """Get TLS PSK Admin Server configuration."""
+        if not self._admin_server:
+            return {
+                "connected": False,
+                "error": "Server not connected",
+            }
+
+        try:
+            config = getattr(self._admin_server, 'config', None)
+            if not config:
+                return {"error": "Config not available"}
+
+            cipher_config = getattr(config, 'cipher_config', None)
+
+            return {
+                "connected": True,
+                "host": config.host,
+                "port": config.port,
+                "maxConnections": config.max_connections,
+                "sessionTimeout": config.session_timeout,
+                "handshakeTimeout": config.handshake_timeout,
+                "cipherConfig": {
+                    "enableLegacy": cipher_config.enable_legacy if cipher_config else False,
+                    "enableNullCiphers": cipher_config.enable_null_ciphers if cipher_config else False,
+                    "enabledCiphers": cipher_config.get_enabled_ciphers() if cipher_config else [],
+                } if cipher_config else None,
+            }
+        except Exception as e:
+            logger.error("Failed to get server config: %s", e)
+            return {"error": str(e)}
 
     # =========================================================================
     # Network Simulator API Implementation

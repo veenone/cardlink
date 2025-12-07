@@ -17,9 +17,19 @@ import { state } from './state.js';
  * @property {number} maxRetries - Maximum reconnection attempts (0 = unlimited)
  */
 
+/**
+ * Gets the dynamic WebSocket URL based on current page location.
+ * @returns {string} WebSocket URL
+ */
+function getDefaultWebSocketUrl() {
+  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+  const host = window.location.host;
+  return `${protocol}//${host}/ws`;
+}
+
 /** @type {WebSocketConfig} */
 const defaultConfig = {
-  url: 'ws://localhost:8080/ws',
+  url: getDefaultWebSocketUrl(),
   autoReconnect: true,
   reconnectInterval: 1000,
   maxReconnectInterval: 30000,

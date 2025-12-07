@@ -6,17 +6,14 @@
   <meta name="description" content="GP OTA Tester Dashboard - Monitor and control GlobalPlatform OTA test sessions">
   <title>GP OTA Tester Dashboard</title>
 
-  <!-- Favicon -->
-  <link rel="icon" type="image/svg+xml" href="/images/favicon.svg">
+  <!-- Favicon - inline SVG data URI -->
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='6' fill='%234F46E5'/><path d='M8 12h16M8 16h12M8 20h8' stroke='white' stroke-width='2' stroke-linecap='round'/></svg>">
 
   <!-- Stylesheets -->
   <link rel="stylesheet" href="/css/tokens.css">
   <link rel="stylesheet" href="/css/base.css">
   <link rel="stylesheet" href="/css/components.css">
   <link rel="stylesheet" href="/css/utilities.css">
-
-  <!-- Preconnect for WebSocket -->
-  <link rel="preconnect" href="ws://localhost:8080">
 </head>
 <body>
   <div id="app" class="app">
@@ -31,9 +28,14 @@
       </div>
 
       <nav class="header__nav" aria-label="Main navigation">
-        <div id="connection-status" class="header__status header__status--disconnected">
+        <div id="server-status" class="header__status header__status--disconnected" title="TLS PSK Server Status">
           <span class="header__status-indicator" aria-hidden="true"></span>
-          <span class="header__status-text">Disconnected</span>
+          <span class="header__status-text">Server: Disconnected</span>
+        </div>
+
+        <div id="connection-status" class="header__status header__status--disconnected" title="Dashboard WebSocket Status">
+          <span class="header__status-indicator" aria-hidden="true"></span>
+          <span class="header__status-text">WS: Disconnected</span>
         </div>
 
         <button
@@ -394,8 +396,8 @@
                   id="ws-url"
                   type="url"
                   class="mt-1"
-                  value="ws://localhost:8080/ws"
-                  placeholder="ws://localhost:8080/ws"
+                  value=""
+                  placeholder="(auto-detect from page URL)"
                 >
               </div>
 

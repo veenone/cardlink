@@ -6,6 +6,28 @@
  */
 
 /**
+ * Deep clone helper - uses structuredClone if available, falls back to JSON
+ * @param {*} obj - Object to clone
+ * @returns {*} Cloned object
+ */
+function deepClone(obj) {
+  if (typeof structuredClone === 'function') {
+    return structuredClone(obj);
+  }
+  return JSON.parse(JSON.stringify(obj));
+}
+
+/**
+ * Gets the dynamic WebSocket URL based on current page location.
+ * @returns {string} WebSocket URL
+ */
+function getDefaultWebSocketUrl() {
+  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+  const host = window.location.host;
+  return `${protocol}//${host}/ws`;
+}
+
+/**
  * @typedef {Object} AppState
  * @property {Object} connection - WebSocket connection state
  * @property {string} connection.status - 'disconnected' | 'connecting' | 'connected'
@@ -38,7 +60,7 @@ const initialState = {
     status: 'all',
   },
   settings: {
-    wsUrl: 'ws://localhost:8080/ws',
+    wsUrl: '',  // Empty = auto-detect from page URL
     autoReconnect: true,
     showTimestamps: true,
     highlightErrors: true,
@@ -75,7 +97,7 @@ const initialState = {
  * @returns {Object} State manager API
  */
 export function createStateManager() {
-  let state = structuredClone(initialState);
+  let state = deepClone(initialState);
   const listeners = new Map();
   let batchUpdates = false;
   let pendingNotifications = new Set();
@@ -270,9 +292,9 @@ export function createStateManager() {
     reset(path) {
       if (path) {
         const initialValue = getNestedValue(initialState, path);
-        this.set(path, structuredClone(initialValue));
+        this.set(path, deepClone(initialValue));
       } else {
-        state = structuredClone(initialState);
+        state = deepClone(initialState);
         notifyListeners('*');
       }
     },
