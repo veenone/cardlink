@@ -73,6 +73,7 @@ class DashboardConfig:
     cors_origins: List[str] = field(default_factory=lambda: ["*"])
     static_dir: Path = STATIC_DIR
     debug: bool = False
+    session_timeout_seconds: float = 0.0  # 0 = disabled, auto-close sessions after timeout
 
 
 @dataclass
@@ -329,6 +330,9 @@ class DashboardServer:
         # Event loop reference for cross-thread event handling
         self._loop: Optional[asyncio.AbstractEventLoop] = None
 
+        # Session timeout task
+        self._session_timeout_task: Optional[asyncio.Task] = None
+
     def set_admin_server(self, admin_server: Any) -> None:
         """Set the AdminServer instance for dashboard integration.
 
@@ -419,13 +423,37 @@ class DashboardServer:
             'protocol_version': 'TLSv1.2',
             'handshake_duration_ms': 5.2,
         }
+
+        In persistent mode, the simulator reconnects multiple times. We check
+        for existing sessions by PSK identity to avoid creating duplicates.
         """
         try:
             psk_identity = event.get('psk_identity', '')
             client_address = event.get('client_address', '')
             cipher_suite = event.get('cipher_suite', '')
 
-            # Create corresponding dashboard session
+            # Check if session already exists for this PSK identity (persistent mode)
+            existing_session = await self.state.get_session_by_psk_identity(psk_identity)
+            if existing_session:
+                # Update existing session instead of creating duplicate
+                await self.state.update_session(
+                    existing_session.id,
+                    status="active",
+                    client_ip=client_address.split(':')[0] if ':' in client_address else client_address,
+                )
+                logger.info(
+                    "Dashboard session reconnected: %s (PSK: %s)",
+                    existing_session.id, psk_identity
+                )
+
+                # Notify WebSocket clients of reconnection
+                await self._broadcast('session_updated', {
+                    'session': existing_session.to_dict(),
+                    'reconnected': True,
+                })
+                return
+
+            # Create new dashboard session
             session = await self.state.create_session(
                 name=psk_identity or f"Session {client_address}",
                 psk_identity=psk_identity,
@@ -472,8 +500,11 @@ class DashboardServer:
                 response_data=response_data,
             )
 
+            # Extract HTTP info from event if available
+            http_info = event.get('http')
+
             # Notify WebSocket clients
-            await self._broadcast('apdu', {
+            apdu_data = {
                 'id': str(uuid.uuid4()),
                 'direction': 'response',
                 'sessionId': session.id,
@@ -481,7 +512,11 @@ class DashboardServer:
                 'sw': sw,
                 'responseData': response_data,
                 'timestamp': int(datetime.now().timestamp() * 1000),
-            })
+            }
+            if http_info:
+                apdu_data['http'] = http_info
+
+            await self._broadcast('apdu', apdu_data)
         except Exception as e:
             logger.error("Error handling APDU received event: %s", e)
 
@@ -506,14 +541,21 @@ class DashboardServer:
                 data=apdu_hex,
             )
 
+            # Extract HTTP info from event if available
+            http_info = event.get('http')
+
             # Notify WebSocket clients
-            await self._broadcast('apdu', {
+            apdu_data = {
                 'id': str(uuid.uuid4()),
                 'direction': 'command',
                 'sessionId': session.id,
                 'data': apdu_hex,
                 'timestamp': int(datetime.now().timestamp() * 1000),
-            })
+            }
+            if http_info:
+                apdu_data['http'] = http_info
+
+            await self._broadcast('apdu', apdu_data)
         except Exception as e:
             logger.error("Error handling APDU sent event: %s", e)
 
@@ -524,6 +566,16 @@ class DashboardServer:
 
         # Subscribe to AdminServer events now that the loop is ready
         self._subscribe_to_admin_events()
+
+        # Start session timeout checker if enabled
+        if self.config.session_timeout_seconds > 0:
+            self._session_timeout_task = asyncio.create_task(
+                self._run_session_timeout_checker()
+            )
+            logger.info(
+                "Session timeout enabled: %.0f seconds",
+                self.config.session_timeout_seconds
+            )
 
         try:
             self._server = await asyncio.start_server(
@@ -553,10 +605,67 @@ class DashboardServer:
 
     async def stop(self) -> None:
         """Stop the server."""
+        # Cancel session timeout task
+        if self._session_timeout_task:
+            self._session_timeout_task.cancel()
+            try:
+                await self._session_timeout_task
+            except asyncio.CancelledError:
+                pass
+            self._session_timeout_task = None
+
         if self._server:
             self._server.close()
             await self._server.wait_closed()
             logger.info("Dashboard server stopped")
+
+    async def _run_session_timeout_checker(self) -> None:
+        """Background task to check and close timed-out sessions.
+
+        Runs periodically to check all sessions and close those that
+        haven't had activity within the configured timeout period.
+        """
+        timeout = self.config.session_timeout_seconds
+        # Check every 10% of the timeout, but at least every 5 seconds
+        check_interval = max(5.0, timeout * 0.1)
+
+        logger.debug(
+            "Session timeout checker started (timeout=%.0fs, interval=%.0fs)",
+            timeout, check_interval
+        )
+
+        try:
+            while True:
+                await asyncio.sleep(check_interval)
+
+                now = datetime.now()
+                sessions_to_close = []
+
+                # Find sessions that have timed out
+                for session_id, session in list(self.state.sessions.items()):
+                    elapsed = (now - session.updated_at).total_seconds()
+                    if elapsed > timeout:
+                        sessions_to_close.append((session_id, session, elapsed))
+
+                # Close timed-out sessions
+                for session_id, session, elapsed in sessions_to_close:
+                    logger.info(
+                        "Closing session %s (PSK: %s) due to timeout (%.0fs idle)",
+                        session_id, session.psk_identity or "unknown", elapsed
+                    )
+
+                    # Delete session from state
+                    await self.state.delete_session(session_id)
+
+                    # Notify WebSocket clients
+                    await self._broadcast('session.deleted', {
+                        'id': session_id,
+                        'reason': 'timeout',
+                    })
+
+        except asyncio.CancelledError:
+            logger.debug("Session timeout checker stopped")
+            raise
 
     async def _handle_connection(
         self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter

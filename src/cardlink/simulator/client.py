@@ -17,6 +17,7 @@ from .config import SimulatorConfig
 from .http_client import HTTPAdminClient, HTTPAdminError, HTTPStatusError
 from .models import (
     APDUExchange,
+    ConnectionMode,
     ConnectionState,
     SessionResult,
     SimulatorStats,
@@ -225,7 +226,8 @@ class MobileSimulator:
         """Run complete admin session.
 
         Exchanges APDUs with the server until session completion (204)
-        or an error occurs.
+        or an error occurs. In persistent mode, polls for new commands
+        after session completion instead of disconnecting.
 
         Returns:
             SessionResult with session outcome.
@@ -240,12 +242,82 @@ class MobileSimulator:
         self._exchanges = []
         session_start = time.monotonic()
 
+        # Check if persistent mode is enabled
+        is_persistent = self.config.behavior.connection_mode == ConnectionMode.PERSISTENT
+        poll_interval_s = self.config.behavior.poll_interval_ms / 1000.0
+        session_timeout = self.config.behavior.session_timeout_seconds
+        last_activity = time.monotonic()
+
         try:
             # Send initial request
             c_apdu = await self._http_client.initial_request()
 
             # Exchange APDUs until session complete
-            while c_apdu:
+            while True:
+                # Check for session timeout in persistent mode
+                if is_persistent and session_timeout > 0:
+                    idle_time = time.monotonic() - last_activity
+                    if idle_time > session_timeout:
+                        logger.info(
+                            f"Session timeout after {idle_time:.1f}s idle "
+                            f"(limit: {session_timeout}s)"
+                        )
+                        break
+
+                # If no command available
+                if not c_apdu:
+                    if is_persistent:
+                        # Poll for new commands (with reconnection support)
+                        logger.debug(
+                            f"No commands, polling in {poll_interval_s:.1f}s..."
+                        )
+                        await asyncio.sleep(poll_interval_s)
+
+                        # Try to poll, reconnect if connection was closed
+                        try:
+                            c_apdu = await self._http_client.poll_request()
+                        except (PSKTLSClientError, OSError) as poll_error:
+                            # Connection closed by server, need to reconnect
+                            logger.info(
+                                f"Connection closed, reconnecting for persistent poll..."
+                            )
+                            try:
+                                # Close old connection
+                                if self._tls_client:
+                                    await self._tls_client.close()
+
+                                # Reconnect
+                                self._tls_client = PSKTLSClient(
+                                    host=self.config.server_host,
+                                    port=self.config.server_port,
+                                    psk_identity=self.config.effective_psk_identity,
+                                    psk_key=self.config.psk_key,
+                                    timeout=self.config.connect_timeout,
+                                    enable_null_ciphers=self.config.enable_null_ciphers,
+                                )
+                                self._connection_info = await self._tls_client.connect()
+                                self._http_client = HTTPAdminClient(self._tls_client)
+
+                                logger.info("Reconnected successfully")
+
+                                # Poll on new connection
+                                c_apdu = await self._http_client.poll_request()
+                            except Exception as reconnect_error:
+                                logger.warning(
+                                    f"Reconnection failed: {reconnect_error}, "
+                                    f"will retry on next poll cycle"
+                                )
+                                continue
+
+                        if c_apdu:
+                            last_activity = time.monotonic()
+                        continue
+                    else:
+                        # Normal mode: session complete
+                        break
+
+                # Reset activity timer when we have a command
+                last_activity = time.monotonic()
                 # Process C-APDU through virtual UICC
                 exchange_start = time.monotonic()
 

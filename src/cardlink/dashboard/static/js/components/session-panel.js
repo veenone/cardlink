@@ -1,11 +1,14 @@
 /**
  * Session Panel Component for GP OTA Tester Dashboard
  *
- * Displays and manages test sessions.
+ * Displays and manages test sessions with pagination.
  */
 
 import { state } from '../state.js';
 import { formatRelative, formatRelativeWithTooltip, formatDurationCompact } from '../utils/time.js';
+import { api } from '../api.js';
+
+const SESSIONS_PER_PAGE = 10;
 
 /**
  * Creates a session panel component.
@@ -15,6 +18,7 @@ import { formatRelative, formatRelativeWithTooltip, formatDurationCompact } from
 export function createSessionPanel(listElement) {
   let isLoading = false;
   let loadError = null;
+  let currentPage = 0;
 
   /**
    * Renders a session item.
@@ -57,7 +61,20 @@ export function createSessionPanel(listElement) {
           <span>${formatRelative(session.updatedAt || session.createdAt)}</span>
         </div>
       </div>
+      <button class="session-item__close" title="Close session" aria-label="Close session">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <line x1="18" y1="6" x2="6" y2="18"></line>
+          <line x1="6" y1="6" x2="18" y2="18"></line>
+        </svg>
+      </button>
     `;
+
+    // Close button handler
+    const closeBtn = item.querySelector('.session-item__close');
+    closeBtn.addEventListener('click', (e) => {
+      e.stopPropagation(); // Prevent selecting the session
+      closeSession(session.id);
+    });
 
     // Click handler
     item.addEventListener('click', () => selectSession(session.id));
@@ -122,6 +139,32 @@ export function createSessionPanel(listElement) {
   }
 
   /**
+   * Closes a session.
+   * @param {string} sessionId - Session ID
+   */
+  async function closeSession(sessionId) {
+    try {
+      await api.deleteSession(sessionId);
+
+      // Remove from state
+      const sessions = state.get('sessions') || [];
+      const updatedSessions = sessions.filter(s => s.id !== sessionId);
+      state.set('sessions', updatedSessions);
+
+      // Clear active session if it was the closed one
+      if (state.get('activeSessionId') === sessionId) {
+        state.set('activeSessionId', null);
+        state.set('apdus', []);
+      }
+
+      // Dispatch event for other components
+      window.dispatchEvent(new CustomEvent('session-closed', { detail: { sessionId } }));
+    } catch (error) {
+      console.error('Failed to close session:', error);
+    }
+  }
+
+  /**
    * Renders loading skeleton.
    * @returns {string} HTML string
    */
@@ -182,6 +225,59 @@ export function createSessionPanel(listElement) {
   }
 
   /**
+   * Renders pagination controls.
+   * @param {number} totalSessions - Total number of sessions
+   * @param {number} totalPages - Total number of pages
+   * @returns {HTMLElement} Pagination element
+   */
+  function renderPagination(totalSessions, totalPages) {
+    const pagination = document.createElement('div');
+    pagination.className = 'session-pagination';
+
+    const startIdx = currentPage * SESSIONS_PER_PAGE + 1;
+    const endIdx = Math.min((currentPage + 1) * SESSIONS_PER_PAGE, totalSessions);
+
+    pagination.innerHTML = `
+      <div class="session-pagination__info">
+        ${startIdx}-${endIdx} of ${totalSessions}
+      </div>
+      <div class="session-pagination__controls">
+        <button class="session-pagination__btn" data-action="prev" ${currentPage === 0 ? 'disabled' : ''} title="Previous page">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="15 18 9 12 15 6"></polyline>
+          </svg>
+        </button>
+        <span class="session-pagination__page">${currentPage + 1}/${totalPages}</span>
+        <button class="session-pagination__btn" data-action="next" ${currentPage >= totalPages - 1 ? 'disabled' : ''} title="Next page">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="9 18 15 12 9 6"></polyline>
+          </svg>
+        </button>
+      </div>
+    `;
+
+    // Add event listeners
+    const prevBtn = pagination.querySelector('[data-action="prev"]');
+    const nextBtn = pagination.querySelector('[data-action="next"]');
+
+    prevBtn.addEventListener('click', () => {
+      if (currentPage > 0) {
+        currentPage--;
+        render();
+      }
+    });
+
+    nextBtn.addEventListener('click', () => {
+      if (currentPage < totalPages - 1) {
+        currentPage++;
+        render();
+      }
+    });
+
+    return pagination;
+  }
+
+  /**
    * Renders all sessions.
    */
   function render() {
@@ -223,11 +319,36 @@ export function createSessionPanel(listElement) {
       return bTime - aTime;
     });
 
+    const totalSessions = sortedSessions.length;
+    const totalPages = Math.ceil(totalSessions / SESSIONS_PER_PAGE);
+
+    // Clamp current page to valid range
+    if (currentPage >= totalPages) {
+      currentPage = Math.max(0, totalPages - 1);
+    }
+
+    // Get sessions for current page
+    const startIdx = currentPage * SESSIONS_PER_PAGE;
+    const endIdx = startIdx + SESSIONS_PER_PAGE;
+    const pageSessions = sortedSessions.slice(startIdx, endIdx);
+
     // Render items
     const fragment = document.createDocumentFragment();
-    for (const session of sortedSessions) {
-      fragment.appendChild(renderSessionItem(session));
+
+    // Add pagination at top if more than one page
+    if (totalPages > 1) {
+      fragment.appendChild(renderPagination(totalSessions, totalPages));
     }
+
+    // Create sessions container
+    const sessionsContainer = document.createElement('div');
+    sessionsContainer.className = 'session-list__items';
+
+    for (const session of pageSessions) {
+      sessionsContainer.appendChild(renderSessionItem(session));
+    }
+
+    fragment.appendChild(sessionsContainer);
 
     listElement.appendChild(fragment);
   }
@@ -303,6 +424,23 @@ export function createSessionPanel(listElement) {
     setError(error) {
       loadError = error;
       render();
+    },
+
+    /**
+     * Goes to a specific page.
+     * @param {number} page - Page number (0-indexed)
+     */
+    goToPage(page) {
+      currentPage = page;
+      render();
+    },
+
+    /**
+     * Gets the current page.
+     * @returns {number} Current page (0-indexed)
+     */
+    getCurrentPage() {
+      return currentPage;
     },
   };
 }

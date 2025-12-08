@@ -1,0 +1,64 @@
+# Mobile Simulator Configuration
+# ================================
+
+# Server connection settings
+server:
+  host: "127.0.0.1"
+  port: 2443
+  connect_timeout: 30.0
+  read_timeout: 30.0
+  retry_count: 3
+  retry_backoff:
+    - 1.0
+    - 2.0
+    - 4.0
+
+# PSK-TLS credentials
+psk:
+  identity: "test_card_001"
+  key: "0102030405060708090A0B0C0D0E0F10"
+
+# Virtual UICC configuration
+uicc:
+  iccid: "8901234567890123456"
+  imsi: "310150123456789"
+  msisdn: "+14155551234"
+
+  # GlobalPlatform settings
+  gp:
+    version: "2.2.1"
+    scp_version: "03"
+    isd_aid: "A000000151000000"
+
+  # Pre-installed applets
+  applets:
+    - aid: "A0000001510001"
+      name: "TestApplet"
+      state: "SELECTABLE"
+      privileges: "00"
+
+# Simulation behavior
+behavior:
+  mode: "normal"  # normal, error, timeout
+  response_delay_ms: 20
+
+  # Error injection settings (when mode=error)
+  error:
+    rate: 0.0
+    codes:
+      - "6A82"
+      - "6985"
+      - "6D00"
+
+  # Timeout simulation settings (when mode=timeout)
+  timeout:
+    probability: 0.0
+    delay_range:
+      min: 1000
+      max: 5000
+
+  # Connection behavior
+  connection:
+    mode: "single"  # single, per_command, batch, reconnect
+    batch_size: 5
+    reconnect_after: 3

@@ -213,38 +213,92 @@
           </div>
 
           <div id="comm-log-body" class="comm-log__body">
-            <div class="comm-log__legend">
-              <span class="comm-log__legend-item comm-log__legend-item--server">
-                <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor">
-                  <rect x="1" y="2" width="10" height="8" rx="1"/>
+            <!-- Tabs for APDU/HTTP view -->
+            <div class="comm-log__tabs" role="tablist" aria-label="Communication view">
+              <button class="comm-log__tab comm-log__tab--active" role="tab" aria-selected="true" aria-controls="comm-tab-apdu" id="tab-apdu" data-tab="apdu">
+                <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5">
+                  <rect x="1" y="2" width="12" height="10" rx="2"/>
+                  <path d="M1 5h12"/>
                 </svg>
-                Server (C-APDU)
-              </span>
-              <span class="comm-log__legend-arrow">
-                <svg width="20" height="12" viewBox="0 0 20 12" fill="none" stroke="currentColor" stroke-width="1.5">
-                  <path d="M0 6h18M14 2l4 4-4 4"/>
+                APDU
+              </button>
+              <button class="comm-log__tab" role="tab" aria-selected="false" aria-controls="comm-tab-http" id="tab-http" data-tab="http">
+                <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5">
+                  <path d="M2 3h10M2 7h6M2 11h8"/>
+                  <circle cx="11" cy="7" r="2"/>
                 </svg>
-              </span>
-              <span class="comm-log__legend-item comm-log__legend-item--client">
-                <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor">
-                  <rect x="2" y="1" width="8" height="10" rx="1"/>
-                </svg>
-                Client (R-APDU)
-              </span>
+                HTTP
+              </button>
             </div>
 
-            <div id="comm-log-container" class="comm-log__container">
-              <div id="comm-log-empty" class="comm-log__empty">
-                <svg class="comm-log__empty-icon" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="1.5">
-                  <path d="M8 16h14v8H8zM26 24h14v8H26z"/>
-                  <path d="M22 20h4M22 28h4" stroke-dasharray="2 2"/>
-                </svg>
-                <p class="text-sm">No communication exchanges</p>
-                <p class="text-xs mt-1">Select a session to view APDU exchanges</p>
+            <!-- APDU Tab Content -->
+            <div id="comm-tab-apdu" class="comm-log__tab-content" role="tabpanel" aria-labelledby="tab-apdu">
+              <div class="comm-log__legend">
+                <span class="comm-log__legend-item comm-log__legend-item--server">
+                  <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor">
+                    <rect x="1" y="2" width="10" height="8" rx="1"/>
+                  </svg>
+                  Server (C-APDU)
+                </span>
+                <span class="comm-log__legend-arrow">
+                  <svg width="20" height="12" viewBox="0 0 20 12" fill="none" stroke="currentColor" stroke-width="1.5">
+                    <path d="M0 6h18M14 2l4 4-4 4"/>
+                  </svg>
+                </span>
+                <span class="comm-log__legend-item comm-log__legend-item--client">
+                  <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor">
+                    <rect x="2" y="1" width="8" height="10" rx="1"/>
+                  </svg>
+                  Client (R-APDU)
+                </span>
               </div>
 
-              <div id="comm-log-content" class="comm-log__content hidden">
-                <!-- Communication entries will be rendered here -->
+              <div id="comm-log-container" class="comm-log__container">
+                <div id="comm-log-empty" class="comm-log__empty">
+                  <svg class="comm-log__empty-icon" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="1.5">
+                    <path d="M8 16h14v8H8zM26 24h14v8H26z"/>
+                    <path d="M22 20h4M22 28h4" stroke-dasharray="2 2"/>
+                  </svg>
+                  <p class="text-sm">No communication exchanges</p>
+                  <p class="text-xs mt-1">Select a session to view APDU exchanges</p>
+                </div>
+
+                <div id="comm-log-content" class="comm-log__content hidden">
+                  <!-- Communication entries will be rendered here -->
+                </div>
+              </div>
+            </div>
+
+            <!-- HTTP Tab Content -->
+            <div id="comm-tab-http" class="comm-log__tab-content hidden" role="tabpanel" aria-labelledby="tab-http">
+              <div class="http-log__legend">
+                <span class="http-log__legend-item http-log__legend-item--request">
+                  <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5">
+                    <path d="M2 6h8M8 3l2 3-2 3"/>
+                  </svg>
+                  Request
+                </span>
+                <span class="http-log__legend-item http-log__legend-item--response">
+                  <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5">
+                    <path d="M10 6H2M4 3L2 6l2 3"/>
+                  </svg>
+                  Response
+                </span>
+              </div>
+
+              <div id="http-log-container" class="http-log__container">
+                <div id="http-log-empty" class="http-log__empty">
+                  <svg class="http-log__empty-icon" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="1.5">
+                    <rect x="6" y="8" width="36" height="32" rx="4"/>
+                    <path d="M6 16h36M14 8v8"/>
+                  </svg>
+                  <p class="text-sm">No HTTP traffic</p>
+                  <p class="text-xs mt-1">HTTP headers will appear here when APDU exchanges occur</p>
+                </div>
+
+                <div id="http-log-content" class="http-log__content hidden">
+                  <!-- HTTP entries will be rendered here -->
+                </div>
               </div>
             </div>
           </div>

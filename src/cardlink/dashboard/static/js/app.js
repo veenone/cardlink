@@ -10,6 +10,7 @@ import { api } from './api.js';
 import { createToastManager } from './components/toast.js';
 import { createModal } from './components/modal.js';
 import { createApduLog } from './components/apdu-log.js';
+import { createHttpLog } from './components/http-log.js';
 import { createSessionPanel } from './components/session-panel.js';
 import { createCommandBuilder } from './components/command-builder.js';
 import { createSimulatorPanel } from './components/simulator-panel.js';
@@ -162,6 +163,54 @@ class DashboardApp {
         commLogToggle?.classList.toggle('comm-log__toggle--collapsed', isExpanded);
       });
     }
+
+    // HTTP log
+    const httpLogContainer = document.getElementById('http-log-container');
+    const httpLogEmpty = document.getElementById('http-log-empty');
+    const httpLogContent = document.getElementById('http-log-content');
+    if (httpLogContainer && httpLogEmpty && httpLogContent) {
+      this.components.httpLog = createHttpLog({
+        container: httpLogContainer,
+        emptyState: httpLogEmpty,
+        content: httpLogContent,
+      });
+    }
+
+    // Setup tab switching for APDU/HTTP tabs
+    this.setupCommLogTabs();
+  }
+
+  /**
+   * Sets up tab switching for communication log tabs.
+   */
+  setupCommLogTabs() {
+    const tabs = document.querySelectorAll('.comm-log__tab');
+    const apduPanel = document.getElementById('comm-tab-apdu');
+    const httpPanel = document.getElementById('comm-tab-http');
+
+    tabs.forEach(tab => {
+      tab.addEventListener('click', () => {
+        const tabType = tab.dataset.tab;
+
+        // Update tab states
+        tabs.forEach(t => {
+          const isActive = t.dataset.tab === tabType;
+          t.classList.toggle('comm-log__tab--active', isActive);
+          t.setAttribute('aria-selected', String(isActive));
+        });
+
+        // Update panel visibility
+        if (tabType === 'apdu') {
+          apduPanel?.classList.remove('hidden');
+          httpPanel?.classList.add('hidden');
+        } else {
+          apduPanel?.classList.add('hidden');
+          httpPanel?.classList.remove('hidden');
+          // Refresh HTTP log when switching to it
+          this.components.httpLog?.refresh();
+        }
+      });
+    });
   }
 
   /**
@@ -297,6 +346,7 @@ class DashboardApp {
         sw: payload.sw,
         responseData: payload.responseData,
         sessionId: payload.sessionId,
+        http: payload.http || null,
       });
     });
 
@@ -569,6 +619,7 @@ class DashboardApp {
     state.clearApdus();
     this.components.apduLog.clear();
     this.components.commLog?.clear();
+    this.components.httpLog?.clear();
     this.components.toast.info('Logs cleared');
   }
 

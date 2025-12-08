@@ -505,6 +505,45 @@ class HTTPAdminClient:
         else:
             raise HTTPStatusError(status_code, f"Unexpected status", body)
 
+    async def poll_request(self) -> bytes:
+        """Poll for new commands (used in persistent mode).
+
+        Similar to initial_request but with X-Admin-Resume header
+        to maintain session context.
+
+        Returns:
+            Next C-APDU bytes, or empty bytes if no commands available.
+
+        Raises:
+            HTTPStatusError: If server returns error status.
+            HTTPProtocolError: If protocol error occurs.
+        """
+        logger.debug("Polling for new commands")
+
+        # Build and send empty POST with resume header
+        request = self.build_request(b"", is_resume=True)
+        await self.tls_client.send(request)
+        self._request_count += 1
+
+        # Receive and parse response
+        response = await self._receive_response()
+        status_code, headers, body = self.parse_response(response)
+
+        logger.debug(f"Poll response: HTTP {status_code}, body={len(body)} bytes")
+
+        # Check status
+        if status_code == 200:
+            # Parse length-prefixed C-APDU
+            c_apdu = self._extract_first_apdu(body)
+            if c_apdu:
+                logger.debug(f"Received C-APDU: {c_apdu.hex().upper()}")
+            return c_apdu
+        elif status_code == 204:
+            # No commands available yet
+            return b""
+        else:
+            raise HTTPStatusError(status_code, "Server error", body)
+
     @property
     def request_count(self) -> int:
         """Get number of requests sent."""

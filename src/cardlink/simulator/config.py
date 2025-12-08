@@ -59,6 +59,8 @@ class BehaviorConfig:
         connection_mode: Connection behavior pattern.
         batch_size: Number of commands per connection in batch mode.
         reconnect_after: Number of commands before reconnecting.
+        poll_interval_ms: Poll interval for persistent mode in milliseconds.
+        session_timeout_seconds: Max time without commands before ending session (persistent mode).
 
     Example:
         >>> config = BehaviorConfig(mode=BehaviorMode.ERROR, error_rate=0.1)
@@ -74,6 +76,8 @@ class BehaviorConfig:
     connection_mode: ConnectionMode = ConnectionMode.SINGLE
     batch_size: int = 5
     reconnect_after: int = 3
+    poll_interval_ms: int = 1000
+    session_timeout_seconds: float = 0.0  # 0 = no timeout (wait forever)
 
     def validate(self) -> None:
         """Validate configuration values.
@@ -103,6 +107,14 @@ class BehaviorConfig:
 
         if self.reconnect_after < 1:
             raise ValueError(f"reconnect_after must be >= 1: {self.reconnect_after}")
+
+        if self.poll_interval_ms < 100:
+            raise ValueError(f"poll_interval_ms must be >= 100: {self.poll_interval_ms}")
+
+        if self.session_timeout_seconds < 0:
+            raise ValueError(
+                f"session_timeout_seconds must be >= 0: {self.session_timeout_seconds}"
+            )
 
 
 @dataclass
@@ -290,6 +302,10 @@ class SimulatorConfig:
                 )
                 behavior_data["batch_size"] = connection_data.get("batch_size", 5)
                 behavior_data["reconnect_after"] = connection_data.get("reconnect_after", 3)
+                behavior_data["poll_interval_ms"] = connection_data.get("poll_interval_ms", 1000)
+                behavior_data["session_timeout_seconds"] = connection_data.get(
+                    "session_timeout_seconds", 0.0
+                )
 
         # Handle error and timeout sub-configs
         error_data = behavior_data.pop("error", {})

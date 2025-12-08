@@ -295,6 +295,31 @@ gp-server start --port 8443 --keys keys.yaml
 | `--verbose` | Enable verbose logging |
 | `--debug` | Enable debug-level logging |
 
+**Session Management:**
+
+```bash
+# List active sessions (requires running server in another process)
+gp-server sessions
+
+# Close a specific session by ID (supports partial ID matching)
+gp-server close-session abc123
+
+# Close all active sessions
+gp-server close-session --all
+
+# Force close without confirmation prompt
+gp-server close-session abc123 --force
+gp-server close-session --all --force
+```
+
+**Close-Session Options:**
+
+| Option | Description |
+|--------|-------------|
+| `SESSION_ID` | Session ID to close (optional, supports partial matching with min 4 chars) |
+| `--all` | Close all active sessions |
+| `--force` | Skip confirmation prompt |
+
 ### gp-simulator
 
 UICC card simulator for testing the PSK-TLS Admin Server.

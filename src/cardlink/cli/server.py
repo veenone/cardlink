@@ -30,6 +30,7 @@ import yaml
 from cardlink.server import (
     AdminServer,
     CipherConfig,
+    CloseReason,
     EventEmitter,
     FileKeyStore,
     MemoryKeyStore,
@@ -138,10 +139,11 @@ def cli(ctx: click.Context, verbose: bool, debug: bool) -> None:
     UICC administration testing.
 
     Available Commands:
-        start     - Start the PSK-TLS server
-        stop      - Stop the running server
-        status    - Show server status and statistics
-        validate  - Validate configuration files before starting
+        start         - Start the PSK-TLS server
+        stop          - Stop the running server
+        status        - Show server status and statistics
+        close-session - Close one or more active sessions
+        validate      - Validate configuration files before starting
 
     Use 'gp-server COMMAND --help' for detailed help on each command.
 
@@ -249,6 +251,12 @@ def cli(ctx: click.Context, verbose: bool, debug: bool) -> None:
     help="Port for web dashboard (default: 8080, only used with --dashboard)",
 )
 @click.option(
+    "--dashboard-session-timeout",
+    default=0.0,
+    type=float,
+    help="Dashboard session timeout in seconds - auto-close idle sessions (default: 0 = disabled)",
+)
+@click.option(
     "--foreground", "-f",
     is_flag=True,
     help="Run server in foreground with console output instead of backgrounding (useful for debugging)",
@@ -267,6 +275,7 @@ def start(
     handshake_timeout: float,
     dashboard: bool,
     dashboard_port: int,
+    dashboard_session_timeout: float,
     foreground: bool,
 ) -> None:
     """Start the PSK-TLS Admin Server.
@@ -431,6 +440,7 @@ def start(
                     dashboard_config = DashboardConfig(
                         host=host if host != "0.0.0.0" else "127.0.0.1",
                         port=dashboard_port,
+                        session_timeout_seconds=dashboard_session_timeout,
                     )
                     dashboard_server = DashboardServer(dashboard_config)
                     dashboard_server.set_admin_server(server)
@@ -684,6 +694,193 @@ def status(ctx: click.Context) -> None:
     click.echo("")
     click.echo("  Note: Detailed stats available only from the same process.")
     click.echo("  Use 'gp-server stop' to stop the server.")
+
+
+# =============================================================================
+# Close Session Command
+# =============================================================================
+
+
+@cli.command("close-session")
+@click.argument("session_id", required=False)
+@click.option(
+    "--all", "close_all",
+    is_flag=True,
+    help="Close all active sessions",
+)
+@click.option(
+    "--force",
+    is_flag=True,
+    help="Force close without confirmation",
+)
+@click.pass_context
+def close_session(
+    ctx: click.Context,
+    session_id: Optional[str],
+    close_all: bool,
+    force: bool,
+) -> None:
+    """Close one or more active sessions.
+
+    Closes a specific session by ID or all sessions if --all is specified.
+    Session IDs support partial matching (minimum 4 characters).
+
+    Examples:
+
+        # Close a specific session by ID (partial match)
+        gp-server close-session abc123
+
+        # Close all sessions
+        gp-server close-session --all
+
+        # Force close without confirmation
+        gp-server close-session --all --force
+    """
+    global _server_instance
+
+    # Validate arguments
+    if not session_id and not close_all:
+        click.echo(
+            click.style(
+                "Error: Provide a SESSION_ID or use --all to close all sessions",
+                fg="red",
+            ),
+            err=True,
+        )
+        sys.exit(1)
+
+    if session_id and close_all:
+        click.echo(
+            click.style(
+                "Error: Cannot specify both SESSION_ID and --all",
+                fg="red",
+            ),
+            err=True,
+        )
+        sys.exit(1)
+
+    # Check if server is running in-process
+    if _server_instance is None or not _server_instance.is_running:
+        click.echo(
+            click.style(
+                "Error: Server is not running in this process. "
+                "Close sessions via the dashboard or restart the server.",
+                fg="red",
+            ),
+            err=True,
+        )
+        sys.exit(1)
+
+    sessions = _server_instance.get_active_sessions()
+
+    if not sessions:
+        click.echo(click.style("No active sessions to close", fg="yellow"))
+        return
+
+    if close_all:
+        # Close all sessions
+        if not force:
+            click.echo(f"About to close {len(sessions)} session(s):")
+            for session in sessions:
+                psk_id = session.psk_identity or "unknown"
+                click.echo(f"  - {session.session_id[:12]}... ({psk_id})")
+            if not click.confirm("Proceed?"):
+                click.echo("Cancelled")
+                return
+
+        closed_count = 0
+        for session in sessions:
+            try:
+                _server_instance.session_manager.close_session(
+                    session.session_id,
+                    reason=CloseReason.NORMAL,
+                )
+                closed_count += 1
+                click.echo(f"Closed session: {session.session_id[:12]}...")
+            except Exception as e:
+                click.echo(
+                    click.style(
+                        f"Failed to close {session.session_id[:12]}...: {e}",
+                        fg="red",
+                    ),
+                    err=True,
+                )
+
+        click.echo(click.style(f"Closed {closed_count} session(s)", fg="green"))
+
+    else:
+        # Close specific session by ID (support partial match)
+        if len(session_id) < 4:
+            click.echo(
+                click.style(
+                    "Error: Session ID must be at least 4 characters",
+                    fg="red",
+                ),
+                err=True,
+            )
+            sys.exit(1)
+
+        # Find matching sessions
+        matching = [
+            s for s in sessions
+            if s.session_id.startswith(session_id) or session_id in s.session_id
+        ]
+
+        if not matching:
+            click.echo(
+                click.style(
+                    f"No session found matching: {session_id}",
+                    fg="yellow",
+                )
+            )
+            click.echo("\nActive sessions:")
+            for session in sessions:
+                psk_id = session.psk_identity or "unknown"
+                click.echo(f"  - {session.session_id[:12]}... ({psk_id})")
+            return
+
+        if len(matching) > 1:
+            click.echo(
+                click.style(
+                    f"Multiple sessions match '{session_id}':",
+                    fg="yellow",
+                )
+            )
+            for session in matching:
+                psk_id = session.psk_identity or "unknown"
+                click.echo(f"  - {session.session_id} ({psk_id})")
+            click.echo("Please provide a more specific ID")
+            return
+
+        session = matching[0]
+        psk_id = session.psk_identity or "unknown"
+
+        if not force:
+            click.echo(f"About to close session:")
+            click.echo(f"  ID: {session.session_id}")
+            click.echo(f"  Identity: {psk_id}")
+            click.echo(f"  State: {session.state.value}")
+            if not click.confirm("Proceed?"):
+                click.echo("Cancelled")
+                return
+
+        try:
+            _server_instance.session_manager.close_session(
+                session.session_id,
+                reason=CloseReason.NORMAL,
+            )
+            click.echo(
+                click.style(
+                    f"Session {session.session_id[:12]}... closed successfully",
+                    fg="green",
+                )
+            )
+        except Exception as e:
+            click.echo(
+                click.style(f"Failed to close session: {e}", fg="red"),
+                err=True,
+            )
+            sys.exit(1)
 
 
 # =============================================================================

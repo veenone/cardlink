@@ -109,6 +109,23 @@ def cli(ctx: click.Context, verbose: bool) -> None:
     default=5.0,
     help="Interval between sessions in loop mode (seconds)",
 )
+@click.option(
+    "--persistent",
+    is_flag=True,
+    help="Keep session open and poll for new commands from server",
+)
+@click.option(
+    "--poll-interval",
+    type=int,
+    default=1000,
+    help="Poll interval in persistent mode (milliseconds)",
+)
+@click.option(
+    "--session-timeout",
+    type=float,
+    default=0.0,
+    help="Session timeout in persistent mode (seconds, 0=no timeout)",
+)
 @click.pass_context
 def run(
     ctx: click.Context,
@@ -124,6 +141,9 @@ def run(
     parallel: bool,
     loop: bool,
     interval: float,
+    persistent: bool,
+    poll_interval: int,
+    session_timeout: float,
 ) -> None:
     """Run mobile simulator session(s).
 
@@ -133,6 +153,7 @@ def run(
         from cardlink.simulator import (
             BehaviorConfig,
             BehaviorMode,
+            ConnectionMode,
             MobileSimulator,
             SimulatorConfig,
         )
@@ -167,6 +188,9 @@ def run(
             mode=BehaviorMode(mode),
             error_rate=error_rate,
             timeout_probability=timeout_probability,
+            connection_mode=ConnectionMode.PERSISTENT if persistent else ConnectionMode.SINGLE,
+            poll_interval_ms=poll_interval,
+            session_timeout_seconds=session_timeout,
         )
 
         sim_config = SimulatorConfig(
@@ -189,6 +213,12 @@ def run(
     console.print(f"Server: {sim_config.server_address}")
     console.print(f"PSK Identity: {sim_config.psk_identity}")
     console.print(f"Mode: {sim_config.behavior.mode.value}")
+    if sim_config.behavior.connection_mode == ConnectionMode.PERSISTENT:
+        console.print(f"[cyan]Persistent mode:[/cyan] poll every {sim_config.behavior.poll_interval_ms}ms")
+        if sim_config.behavior.session_timeout_seconds > 0:
+            console.print(f"  Session timeout: {sim_config.behavior.session_timeout_seconds}s")
+        else:
+            console.print(f"  Session timeout: none (Ctrl+C to stop)")
 
     # Warn about NULL ciphers
     if sim_config.enable_null_ciphers:
@@ -358,9 +388,11 @@ behavior:
 
   # Connection behavior
   connection:
-    mode: "single"  # single, per_command, batch, reconnect
+    mode: "single"  # single, per_command, batch, reconnect, persistent
     batch_size: 5
     reconnect_after: 3
+    poll_interval_ms: 1000  # Poll interval for persistent mode
+    session_timeout_seconds: 0  # Session timeout (0 = no timeout)
 """
 
     with open(output, "w") as f:
@@ -450,6 +482,117 @@ def status() -> None:
     console.print()
     console.print("Use 'gp-simulator run' to start a simulation session.")
     console.print("Use 'gp-simulator test-connection' to test server connectivity.")
+
+
+@cli.command()
+@click.option(
+    "-d", "--dashboard",
+    default="http://127.0.0.1:8080",
+    help="Dashboard URL (e.g., http://localhost:8080)",
+)
+@click.option(
+    "--session-id",
+    help="Session ID to close (if not specified, lists available sessions)",
+)
+@click.option(
+    "--all",
+    "close_all",
+    is_flag=True,
+    help="Close all sessions",
+)
+def close_session(dashboard: str, session_id: Optional[str], close_all: bool) -> None:
+    """Close a session in the dashboard.
+
+    If no session ID is specified, lists all available sessions.
+    Use --all to close all sessions.
+    """
+    import urllib.request
+    import urllib.error
+
+    api_base = dashboard.rstrip("/") + "/api"
+
+    def api_request(method: str, path: str) -> dict:
+        """Make API request."""
+        url = f"{api_base}{path}"
+        req = urllib.request.Request(url, method=method)
+        req.add_header("Content-Type", "application/json")
+        try:
+            with urllib.request.urlopen(req, timeout=10) as response:
+                import json
+                return json.loads(response.read().decode())
+        except urllib.error.HTTPError as e:
+            if e.code == 404:
+                return {"error": "not_found"}
+            raise
+
+    try:
+        # Get list of sessions
+        sessions = api_request("GET", "/sessions")
+
+        if not sessions:
+            console.print("[yellow]No sessions found[/yellow]")
+            return
+
+        if not session_id and not close_all:
+            # List sessions
+            console.print("[bold]Available Sessions[/bold]")
+            console.print()
+            table = Table(show_header=True, header_style="bold")
+            table.add_column("ID", style="dim")
+            table.add_column("Name/Identity")
+            table.add_column("Status")
+            table.add_column("APDUs")
+
+            for s in sessions:
+                psk_id = s.get("metadata", {}).get("psk_identity", s.get("name", ""))
+                display_name = psk_id[:20] + "..." if len(psk_id) > 20 else psk_id
+                table.add_row(
+                    s["id"][:12] + "...",
+                    display_name,
+                    s.get("status", "unknown"),
+                    str(s.get("apduCount", 0)),
+                )
+            console.print(table)
+            console.print()
+            console.print("Use --session-id <ID> to close a specific session.")
+            console.print("Use --all to close all sessions.")
+            return
+
+        if close_all:
+            # Close all sessions
+            count = 0
+            for s in sessions:
+                try:
+                    api_request("DELETE", f"/sessions/{s['id']}")
+                    count += 1
+                    console.print(f"[green]Closed:[/green] {s['id'][:12]}...")
+                except Exception as e:
+                    console.print(f"[red]Failed:[/red] {s['id'][:12]}... - {e}")
+            console.print(f"\n[bold]Closed {count} session(s)[/bold]")
+        else:
+            # Close specific session
+            # Find session by partial ID match
+            matching = [s for s in sessions if s["id"].startswith(session_id)]
+            if not matching:
+                console.print(f"[red]Error:[/red] Session not found: {session_id}")
+                sys.exit(1)
+            if len(matching) > 1:
+                console.print(f"[red]Error:[/red] Multiple sessions match: {session_id}")
+                for s in matching:
+                    console.print(f"  - {s['id']}")
+                sys.exit(1)
+
+            s = matching[0]
+            api_request("DELETE", f"/sessions/{s['id']}")
+            console.print(f"[green]Session closed:[/green] {s['id']}")
+
+    except urllib.error.URLError as e:
+        console.print(f"[red]Error:[/red] Cannot connect to dashboard at {dashboard}")
+        console.print(f"  {e}")
+        sys.exit(1)
+    except Exception as e:
+        console.print(f"[red]Error:[/red] {e}")
+        sys.exit(1)
 
 
 def main() -> None:

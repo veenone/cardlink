@@ -485,6 +485,13 @@ class HTTPHandler:
                                 "session_id": session_id,
                                 "psk_identity": psk_identity,
                                 "apdu": r_apdu,
+                                "http": {
+                                    "method": http_request.method,
+                                    "path": http_request.path,
+                                    "version": http_request.version,
+                                    "headers": dict(http_request.headers),
+                                    "body_length": len(http_request.body),
+                                },
                             })
                 except InvalidRequestError:
                     # If body doesn't parse as APDUs, log but continue
@@ -514,6 +521,12 @@ class HTTPHandler:
                     "session_id": session_id,
                     "psk_identity": psk_identity,
                     "apdu": next_command,
+                    "http": {
+                        "status": 200,
+                        "status_text": "OK",
+                        "content_type": CONTENT_TYPE_GP_ADMIN_RESPONSE,
+                        "body_length": len(next_command),
+                    },
                 })
 
             return self.build_command_response(

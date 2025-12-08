@@ -59,12 +59,14 @@ class ConnectionMode(Enum):
         PER_COMMAND: New connection per command.
         BATCH: Multiple commands per connection.
         RECONNECT: Disconnect and reconnect mid-session.
+        PERSISTENT: Keep connection open and poll for new commands.
     """
 
     SINGLE = "single"
     PER_COMMAND = "per_command"
     BATCH = "batch"
     RECONNECT = "reconnect"
+    PERSISTENT = "persistent"
 
 
 # =============================================================================
