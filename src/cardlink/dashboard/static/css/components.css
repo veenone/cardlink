@@ -502,11 +502,29 @@
   left: 0;
   right: 0;
   bottom: 0;
+  max-height: calc(100vh - 250px);
   overflow-y: auto;
 }
 
 .apdu-log__content {
   position: relative;
+  counter-reset: apdu-line;
+}
+
+.apdu-entry::before {
+  counter-increment: apdu-line;
+  content: counter(apdu-line);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 32px;
+  height: 24px;
+  font-size: var(--text-xs);
+  font-family: var(--font-mono);
+  font-weight: var(--font-medium);
+  color: var(--text-tertiary);
+  background-color: var(--bg-secondary);
+  border-radius: var(--radius-sm);
 }
 
 .apdu-log__empty {
@@ -521,9 +539,9 @@
 /* APDU Entry */
 .apdu-entry {
   display: grid;
-  grid-template-columns: 100px 80px 1fr auto;
+  grid-template-columns: 40px 100px 80px 1fr auto;
   gap: var(--space-3);
-  align-items: start;
+  align-items: center;
   padding: var(--space-2) var(--space-4);
   font-family: var(--font-mono);
   font-size: var(--text-sm);
@@ -1980,16 +1998,40 @@
 
 .comm-log__content {
   padding: var(--space-2);
+  max-height: calc(100vh - 250px);
+  overflow-y: auto;
+  counter-reset: comm-line;
 }
 
 /* Communication Exchange */
 .comm-exchange {
+  position: relative;
   padding: var(--space-3);
+  padding-left: calc(var(--space-3) + 40px);
   margin-bottom: var(--space-2);
   background-color: var(--bg-primary);
   border: 1px solid var(--border-primary);
   border-radius: var(--radius-md);
   transition: border-color var(--transition-fast);
+}
+
+.comm-exchange::before {
+  counter-increment: comm-line;
+  content: counter(comm-line);
+  position: absolute;
+  left: var(--space-2);
+  top: var(--space-3);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 28px;
+  height: 24px;
+  font-size: var(--text-xs);
+  font-family: var(--font-mono);
+  font-weight: var(--font-medium);
+  color: var(--text-tertiary);
+  background-color: var(--bg-secondary);
+  border-radius: var(--radius-sm);
 }
 
 .comm-exchange:hover {
@@ -2271,17 +2313,40 @@
   gap: var(--space-2);
   flex: 1;
   min-height: 0;
+  max-height: calc(100vh - 250px);
   overflow-y: auto;
+  padding-left: 40px;
+  counter-reset: http-line;
 }
 
 .http-log__entry {
   display: flex;
   flex-direction: column;
+  position: relative;
   border: 1px solid var(--border-primary);
   border-radius: var(--radius-md);
-  overflow: hidden;
+  overflow: visible;
   background-color: var(--bg-primary);
   flex-shrink: 0;
+}
+
+.http-log__entry::before {
+  counter-increment: http-line;
+  content: counter(http-line);
+  position: absolute;
+  left: -36px;
+  top: var(--space-3);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 28px;
+  height: 24px;
+  font-size: var(--text-xs);
+  font-family: var(--font-mono);
+  font-weight: var(--font-medium);
+  color: var(--text-tertiary);
+  background-color: var(--bg-secondary);
+  border-radius: var(--radius-sm);
 }
 
 .http-log__entry--request {
