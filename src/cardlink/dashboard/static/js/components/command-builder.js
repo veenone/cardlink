@@ -247,6 +247,8 @@ export function createCommandBuilder(elements) {
    * Toggles the collapsed state.
    */
   function toggle() {
+    if (!header || !body) return;
+
     isOpen = !isOpen;
     state.set('ui.commandBuilderOpen', isOpen);
 
@@ -293,19 +295,21 @@ export function createCommandBuilder(elements) {
     setTimeout(updatePreview, 0);
   });
 
-  // Collapsible header
-  header.addEventListener('click', toggle);
-  header.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' || e.key === ' ') {
-      e.preventDefault();
-      toggle();
-    }
-  });
+  // Collapsible header (only if header element exists)
+  if (header) {
+    header.addEventListener('click', toggle);
+    header.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        toggle();
+      }
+    });
 
-  // Initialize state
-  if (!isOpen) {
-    body.classList.add('command-builder__body--collapsed');
-    header.setAttribute('aria-expanded', 'false');
+    // Initialize state
+    if (!isOpen) {
+      body?.classList.add('command-builder__body--collapsed');
+      header.setAttribute('aria-expanded', 'false');
+    }
   }
 
   // Initial preview

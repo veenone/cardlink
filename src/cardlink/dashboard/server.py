@@ -22,7 +22,43 @@ import uuid
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Set
+from typing import Any, Callable, Dict, List, Optional, Set, Tuple
+
+# Import protocol layer for APDU parsing and analysis
+try:
+    from cardlink.protocol import (
+        # Remote APDU parsing
+        CompactRemoteAPDU,
+        ExpandedRemoteAPDU,
+        RemoteAPDUFormat,
+        APDUCase,
+        # Scripting templates
+        CommandScriptingTemplate,
+        ResponseScriptingTemplate,
+        ScriptingTag,
+        ScriptChaining,
+        # HTTP constants
+        CONTENT_TYPE_COMMAND,
+        CONTENT_TYPE_RESPONSE,
+        GP_CONTENT_TYPE_COMMAND,
+        GP_CONTENT_TYPE_RESPONSE,
+        ScriptStatus,
+        encode_aid_for_header,
+        decode_aid_from_header,
+        # RAM commands
+        RAMCommand,
+        InstallType,
+        KeyType,
+        # GP SCP81
+        PSKKeyType,
+        PSKCipherSuite,
+        CIPHER_SUITE_IDS,
+        TriggerTag,
+        get_supported_cipher_suites,
+    )
+    PROTOCOL_AVAILABLE = True
+except ImportError:
+    PROTOCOL_AVAILABLE = False
 
 # Import network simulator components (optional)
 try:
@@ -78,7 +114,7 @@ class DashboardConfig:
 
 @dataclass
 class Session:
-    """Test session."""
+    """Test session with protocol details."""
 
     id: str
     name: str
@@ -89,6 +125,15 @@ class Session:
     metadata: Dict[str, Any] = field(default_factory=dict)
     psk_identity: Optional[str] = None
     client_ip: Optional[str] = None
+    # Protocol details (GP SCP81 / ETSI TS 102.226)
+    cipher_suite: Optional[str] = None
+    tls_version: Optional[str] = None
+    handshake_duration_ms: Optional[float] = None
+    protocol_mode: str = "gp"  # "gp" for GlobalPlatform, "etsi" for ETSI
+    # Protocol statistics
+    ram_command_count: int = 0
+    rfm_command_count: int = 0
+    script_count: int = 0
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary."""
@@ -109,12 +154,21 @@ class Session:
             "metadata": metadata,
             "pskIdentity": self.psk_identity,
             "clientIp": self.client_ip,
+            # Protocol details
+            "cipherSuite": self.cipher_suite,
+            "tlsVersion": self.tls_version,
+            "handshakeDurationMs": self.handshake_duration_ms,
+            "protocolMode": self.protocol_mode,
+            # Protocol statistics
+            "ramCommandCount": self.ram_command_count,
+            "rfmCommandCount": self.rfm_command_count,
+            "scriptCount": self.script_count,
         }
 
 
 @dataclass
 class APDUEntry:
-    """APDU log entry."""
+    """APDU log entry with protocol analysis."""
 
     id: str
     session_id: str
@@ -124,6 +178,12 @@ class APDUEntry:
     sw: Optional[str] = None
     response_data: Optional[str] = None
     metadata: Dict[str, Any] = field(default_factory=dict)
+    # Protocol analysis fields
+    ins: Optional[int] = None
+    ins_name: Optional[str] = None
+    apdu_type: Optional[str] = None  # 'ram', 'rfm', 'standard', 'unknown'
+    remote_apdu_format: Optional[str] = None  # 'compact', 'expanded', None
+    script_chaining: Optional[str] = None  # 'first', 'subsequent', 'last', 'only'
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary."""
@@ -136,7 +196,79 @@ class APDUEntry:
             "sw": self.sw,
             "responseData": self.response_data,
             "metadata": self.metadata,
+            # Protocol analysis
+            "ins": self.ins,
+            "insName": self.ins_name,
+            "apduType": self.apdu_type,
+            "remoteApduFormat": self.remote_apdu_format,
+            "scriptChaining": self.script_chaining,
         }
+
+
+# APDU parsing helper functions
+def _parse_apdu_info(apdu_hex: str, direction: str) -> Dict[str, Any]:
+    """Parse APDU and extract protocol information.
+
+    Args:
+        apdu_hex: APDU data as hex string.
+        direction: 'command' or 'response'.
+
+    Returns:
+        Dictionary with parsed info: ins, ins_name, apdu_type.
+    """
+    result = {
+        "ins": None,
+        "ins_name": None,
+        "apdu_type": None,
+        "remote_apdu_format": None,
+    }
+
+    if direction != "command" or len(apdu_hex) < 8:
+        return result
+
+    try:
+        apdu_bytes = bytes.fromhex(apdu_hex)
+        if len(apdu_bytes) < 4:
+            return result
+
+        ins = apdu_bytes[1]
+        result["ins"] = ins
+
+        # INS name mapping
+        ins_names = {
+            0xA4: "SELECT",
+            0xB0: "READ BINARY",
+            0xB2: "READ RECORD",
+            0xC0: "GET RESPONSE",
+            0xCA: "GET DATA",
+            0xD6: "UPDATE BINARY",
+            0xDC: "UPDATE RECORD",
+            0xE2: "STORE DATA",
+            0xE4: "DELETE",
+            0xE6: "INSTALL",
+            0xE8: "LOAD",
+            0xF2: "GET STATUS",
+            0xF0: "SET STATUS",
+            0x50: "INITIALIZE UPDATE",
+            0x82: "EXTERNAL AUTHENTICATE",
+            0x84: "GET CHALLENGE",
+            0xD8: "PUT KEY",
+        }
+        result["ins_name"] = ins_names.get(ins, f"INS_{ins:02X}")
+
+        # Determine APDU type (RAM, RFM, standard)
+        ram_commands = {0xE4, 0xE6, 0xE8, 0xF2, 0xF0, 0xD8, 0xE2}
+        if ins in ram_commands:
+            result["apdu_type"] = "ram"
+        elif ins in {0xA4, 0xB0, 0xB2, 0xC0, 0xCA, 0xD6, 0xDC}:
+            result["apdu_type"] = "standard"
+        else:
+            result["apdu_type"] = "unknown"
+
+    except (ValueError, IndexError):
+        pass
+
+    return result
 
 
 class DashboardState:
@@ -152,14 +284,22 @@ class DashboardState:
         name: str,
         psk_identity: Optional[str] = None,
         client_ip: Optional[str] = None,
+        cipher_suite: Optional[str] = None,
+        tls_version: Optional[str] = None,
+        handshake_duration_ms: Optional[float] = None,
+        protocol_mode: str = "gp",
         **metadata,
     ) -> Session:
-        """Create a new session.
+        """Create a new session with protocol details.
 
         Args:
             name: Session display name.
             psk_identity: PSK identity (typically ICCID) for the connection.
             client_ip: Client IP address.
+            cipher_suite: TLS cipher suite (e.g., 'PSK-AES128-CBC-SHA256').
+            tls_version: TLS version (e.g., 'TLSv1.2').
+            handshake_duration_ms: TLS handshake duration in milliseconds.
+            protocol_mode: Protocol mode ('gp' or 'etsi').
             **metadata: Additional metadata.
 
         Returns:
@@ -176,6 +316,10 @@ class DashboardState:
                 name=display_name,
                 psk_identity=psk_identity,
                 client_ip=client_ip,
+                cipher_suite=cipher_suite,
+                tls_version=tls_version,
+                handshake_duration_ms=handshake_duration_ms,
+                protocol_mode=protocol_mode,
                 metadata=metadata,
             )
             self.sessions[session.id] = session
@@ -233,10 +377,13 @@ class DashboardState:
         response_data: Optional[str] = None,
         **metadata,
     ) -> Optional[APDUEntry]:
-        """Add an APDU entry."""
+        """Add an APDU entry with protocol analysis."""
         async with self._lock:
             if session_id not in self.sessions:
                 return None
+
+            # Parse APDU for protocol information
+            apdu_info = _parse_apdu_info(data, direction)
 
             entry = APDUEntry(
                 id=str(uuid.uuid4()),
@@ -247,14 +394,28 @@ class DashboardState:
                 sw=sw,
                 response_data=response_data,
                 metadata=metadata,
+                # Protocol analysis fields
+                ins=apdu_info.get("ins"),
+                ins_name=apdu_info.get("ins_name"),
+                apdu_type=apdu_info.get("apdu_type"),
+                remote_apdu_format=apdu_info.get("remote_apdu_format"),
             )
 
             if session_id not in self.apdus:
                 self.apdus[session_id] = []
 
             self.apdus[session_id].append(entry)
-            self.sessions[session_id].apdu_count = len(self.apdus[session_id])
-            self.sessions[session_id].updated_at = datetime.now()
+
+            # Update session counters
+            session = self.sessions[session_id]
+            session.apdu_count = len(self.apdus[session_id])
+            session.updated_at = datetime.now()
+
+            # Update protocol-specific counters
+            if apdu_info.get("apdu_type") == "ram":
+                session.ram_command_count += 1
+            elif apdu_info.get("apdu_type") == "rfm":
+                session.rfm_command_count += 1
 
             return entry
 
@@ -431,6 +592,8 @@ class DashboardServer:
             psk_identity = event.get('psk_identity', '')
             client_address = event.get('client_address', '')
             cipher_suite = event.get('cipher_suite', '')
+            tls_version = event.get('protocol_version', '')
+            handshake_duration_ms = event.get('handshake_duration_ms')
 
             # Check if session already exists for this PSK identity (persistent mode)
             existing_session = await self.state.get_session_by_psk_identity(psk_identity)
@@ -440,10 +603,13 @@ class DashboardServer:
                     existing_session.id,
                     status="active",
                     client_ip=client_address.split(':')[0] if ':' in client_address else client_address,
+                    cipher_suite=cipher_suite,
+                    tls_version=tls_version,
+                    handshake_duration_ms=handshake_duration_ms,
                 )
                 logger.info(
-                    "Dashboard session reconnected: %s (PSK: %s)",
-                    existing_session.id, psk_identity
+                    "Dashboard session reconnected: %s (PSK: %s, cipher: %s)",
+                    existing_session.id, psk_identity, cipher_suite
                 )
 
                 # Notify WebSocket clients of reconnection
@@ -453,12 +619,14 @@ class DashboardServer:
                 })
                 return
 
-            # Create new dashboard session
+            # Create new dashboard session with protocol details
             session = await self.state.create_session(
                 name=psk_identity or f"Session {client_address}",
                 psk_identity=psk_identity,
                 client_ip=client_address.split(':')[0] if ':' in client_address else client_address,
                 cipher_suite=cipher_suite,
+                tls_version=tls_version,
+                handshake_duration_ms=handshake_duration_ms,
             )
 
             logger.info("Dashboard session created: %s (PSK: %s)", session.id, psk_identity)
@@ -854,7 +1022,51 @@ class DashboardServer:
                 "simulator_connected": self._simulator is not None and self._simulator.is_connected,
                 "server_available": ADMIN_SERVER_AVAILABLE,
                 "server_connected": self.is_server_connected,
+                "protocol_available": PROTOCOL_AVAILABLE,
             }
+
+        # =====================================================================
+        # Protocol Information API (GP SCP81 / ETSI TS 102.226)
+        # =====================================================================
+
+        elif path == "/api/protocol/info":
+            if method == "GET":
+                response = await self._get_protocol_info()
+
+        elif path == "/api/protocol/ciphers":
+            if method == "GET":
+                response = await self._get_supported_ciphers()
+
+        elif path == "/api/protocol/stats":
+            if method == "GET":
+                response = await self._get_protocol_stats()
+
+        # =====================================================================
+        # GP SCP81 Configuration API
+        # =====================================================================
+
+        elif path == "/api/scp81/config":
+            if method == "GET":
+                response = await self._get_scp81_config()
+            elif method == "PUT":
+                response = await self._update_scp81_config(body)
+
+        elif path == "/api/scp81/keys":
+            if method == "GET":
+                response = await self._get_scp81_keys()
+            elif method == "POST":
+                response = await self._add_scp81_key(body)
+
+        elif path.startswith("/api/scp81/keys/"):
+            key_id = path.split("/")[-1]
+            if method == "DELETE":
+                response = await self._delete_scp81_key(key_id)
+
+        elif path == "/api/scp81/trigger":
+            if method == "GET":
+                response = await self._get_trigger_params()
+            elif method == "PUT":
+                response = await self._update_trigger_params(body)
 
         # =====================================================================
         # Network Simulator API
@@ -1178,6 +1390,391 @@ class DashboardServer:
             callback: Function to call when APDU is received.
         """
         self._apdu_callbacks.append(callback)
+
+    # =========================================================================
+    # Protocol Information API (GP SCP81 / ETSI TS 102.226)
+    # =========================================================================
+
+    async def _get_protocol_info(self) -> Dict[str, Any]:
+        """Get protocol layer information."""
+        if not PROTOCOL_AVAILABLE:
+            return {
+                "available": False,
+                "error": "Protocol module not installed",
+            }
+
+        return {
+            "available": True,
+            "standards": [
+                {
+                    "name": "GlobalPlatform RAM over HTTP",
+                    "version": "1.1.2",
+                    "spec": "Amendment B",
+                    "features": ["SCP81 (PSK-TLS)", "RAM commands", "HTTP Admin protocol"],
+                },
+                {
+                    "name": "ETSI TS 102.226",
+                    "version": "latest",
+                    "features": ["Remote APDU", "Command Scripting", "Response Scripting"],
+                },
+            ],
+            "supportedCommands": {
+                "ram": [
+                    {"ins": "0xE4", "name": "DELETE"},
+                    {"ins": "0xE6", "name": "INSTALL"},
+                    {"ins": "0xE8", "name": "LOAD"},
+                    {"ins": "0xD8", "name": "PUT KEY"},
+                    {"ins": "0xE2", "name": "STORE DATA"},
+                    {"ins": "0xF2", "name": "GET STATUS"},
+                    {"ins": "0xF0", "name": "SET STATUS"},
+                ],
+                "standard": [
+                    {"ins": "0xA4", "name": "SELECT"},
+                    {"ins": "0xB0", "name": "READ BINARY"},
+                    {"ins": "0xB2", "name": "READ RECORD"},
+                    {"ins": "0xC0", "name": "GET RESPONSE"},
+                    {"ins": "0xCA", "name": "GET DATA"},
+                ],
+            },
+        }
+
+    async def _get_supported_ciphers(self) -> Dict[str, Any]:
+        """Get supported PSK-TLS cipher suites."""
+        if not PROTOCOL_AVAILABLE:
+            return {
+                "available": False,
+                "ciphers": [],
+            }
+
+        # Get cipher suites from the protocol layer
+        try:
+            cipher_suites = get_supported_cipher_suites()
+            ciphers = [
+                {
+                    "id": f"0x{CIPHER_SUITE_IDS.get(cs.name, 0):04X}",
+                    "name": cs.name,
+                    "keyType": cs.name.split('-')[0],  # PSK, RSA-PSK, etc.
+                }
+                for cs in cipher_suites
+            ]
+        except Exception:
+            ciphers = [
+                {"id": "0x008C", "name": "PSK-AES128-CBC-SHA", "keyType": "PSK"},
+                {"id": "0x008D", "name": "PSK-AES256-CBC-SHA", "keyType": "PSK"},
+                {"id": "0x00AE", "name": "PSK-AES128-CBC-SHA256", "keyType": "PSK"},
+                {"id": "0x00AF", "name": "PSK-AES256-CBC-SHA384", "keyType": "PSK"},
+            ]
+
+        return {
+            "available": True,
+            "ciphers": ciphers,
+            "keyTypes": [
+                {"type": "PSK", "description": "Pre-Shared Key (SCP81)"},
+                {"type": "RSA-PSK", "description": "RSA + PSK hybrid"},
+            ],
+        }
+
+    async def _get_protocol_stats(self) -> Dict[str, Any]:
+        """Get protocol statistics from sessions."""
+        sessions = await self.state.get_sessions()
+
+        # Aggregate statistics
+        total_ram = sum(s.ram_command_count for s in sessions)
+        total_rfm = sum(s.rfm_command_count for s in sessions)
+        total_scripts = sum(s.script_count for s in sessions)
+        total_apdus = sum(s.apdu_count for s in sessions)
+
+        # Cipher suite distribution
+        cipher_counts: Dict[str, int] = {}
+        for s in sessions:
+            if s.cipher_suite:
+                cipher_counts[s.cipher_suite] = cipher_counts.get(s.cipher_suite, 0) + 1
+
+        # TLS version distribution
+        tls_counts: Dict[str, int] = {}
+        for s in sessions:
+            if s.tls_version:
+                tls_counts[s.tls_version] = tls_counts.get(s.tls_version, 0) + 1
+
+        return {
+            "sessionCount": len(sessions),
+            "totalApdus": total_apdus,
+            "ramCommands": total_ram,
+            "rfmCommands": total_rfm,
+            "scriptCount": total_scripts,
+            "cipherDistribution": cipher_counts,
+            "tlsVersionDistribution": tls_counts,
+        }
+
+    # =========================================================================
+    # GP SCP81 Configuration API Implementation
+    # =========================================================================
+
+    async def _get_scp81_config(self) -> Dict[str, Any]:
+        """Get current SCP81 configuration."""
+        # Get default cipher suites from protocol layer
+        default_ciphers = []
+        if PROTOCOL_AVAILABLE:
+            # Get all PSK cipher suites from the enum
+            default_ciphers = [cs.name for cs in PSKCipherSuite]
+
+        # If no admin server connected, return protocol defaults
+        if not self._admin_server:
+            return {
+                "available": True,
+                "connected": False,
+                "protocol": "SCP81",
+                "protocolVersion": "1.1.2",
+                "tlsVersion": "TLSv1.2",
+                "supportedCiphers": default_ciphers,
+                "enabledCiphers": default_ciphers[:4] if default_ciphers else [],
+                "nullCiphersEnabled": False,
+                "sessionTimeout": 300,
+                "handshakeTimeout": 30,
+                "message": "Showing protocol defaults (server not connected)",
+            }
+
+        try:
+            config = getattr(self._admin_server, 'config', None)
+            if not config:
+                return {
+                    "available": True,
+                    "connected": True,
+                    "protocol": "SCP81",
+                    "protocolVersion": "1.1.2",
+                    "tlsVersion": "TLSv1.2",
+                    "supportedCiphers": default_ciphers,
+                    "enabledCiphers": default_ciphers[:4] if default_ciphers else [],
+                    "nullCiphersEnabled": False,
+                    "sessionTimeout": 300,
+                    "handshakeTimeout": 30,
+                }
+
+            return {
+                "available": True,
+                "connected": True,
+                "protocol": "SCP81",
+                "protocolVersion": "1.1.2",
+                "tlsVersion": getattr(config, 'tls_version', 'TLSv1.2'),
+                "supportedCiphers": default_ciphers,
+                "enabledCiphers": getattr(config, 'cipher_suites', default_ciphers),
+                "nullCiphersEnabled": getattr(config, 'enable_null_ciphers', False),
+                "sessionTimeout": getattr(config, 'session_timeout', 300),
+                "handshakeTimeout": getattr(config, 'handshake_timeout', 30),
+            }
+        except Exception as e:
+            logger.error("Failed to get SCP81 config: %s", e)
+            return {"available": False, "error": str(e)}
+
+    async def _update_scp81_config(self, body: Dict[str, Any]) -> Dict[str, Any]:
+        """Update SCP81 configuration."""
+        if not self._admin_server:
+            return {"error": "Server not connected"}, 503
+
+        try:
+            config = getattr(self._admin_server, 'config', None)
+            if not config:
+                return {"error": "Server config not available"}, 500
+
+            # Update allowed fields
+            if 'sessionTimeout' in body:
+                config.session_timeout = int(body['sessionTimeout'])
+            if 'handshakeTimeout' in body:
+                config.handshake_timeout = int(body['handshakeTimeout'])
+            if 'enabledCiphers' in body:
+                config.cipher_suites = body['enabledCiphers']
+
+            logger.info("SCP81 config updated: %s", body)
+            return {"success": True, "message": "Configuration updated"}
+        except Exception as e:
+            logger.error("Failed to update SCP81 config: %s", e)
+            return {"error": str(e)}, 500
+
+    async def _get_scp81_keys(self) -> Dict[str, Any]:
+        """Get configured PSK keys."""
+        # Initialize local key storage if needed
+        if not hasattr(self, '_local_scp81_keys'):
+            self._local_scp81_keys = {}
+
+        # If no admin server, return local keys
+        if not self._admin_server:
+            keys = list(self._local_scp81_keys.values())
+            return {
+                "keys": keys,
+                "count": len(keys),
+                "connected": False,
+                "message": "Using local key storage (server not connected)",
+            }
+
+        try:
+            key_manager = getattr(self._admin_server, '_key_manager', None)
+            if not key_manager:
+                return {
+                    "keys": list(self._local_scp81_keys.values()),
+                    "count": len(self._local_scp81_keys),
+                    "connected": True,
+                    "message": "Key manager not available, showing local keys",
+                }
+
+            keys = []
+            all_keys = getattr(key_manager, 'get_all_keys', lambda: [])()
+            for key in all_keys:
+                keys.append({
+                    "identity": key.identity if hasattr(key, 'identity') else str(key),
+                    "keyId": getattr(key, 'key_id', 0),
+                    "keyVersion": getattr(key, 'key_version', 1),
+                    "algorithm": getattr(key, 'algorithm', 'AES-128'),
+                    "active": getattr(key, 'active', True),
+                })
+
+            return {"keys": keys, "count": len(keys), "connected": True}
+        except Exception as e:
+            logger.error("Failed to get SCP81 keys: %s", e)
+            return {"keys": [], "error": str(e)}
+
+    async def _add_scp81_key(self, body: Dict[str, Any]) -> Dict[str, Any]:
+        """Add a new PSK key."""
+        # Initialize local key storage if needed
+        if not hasattr(self, '_local_scp81_keys'):
+            self._local_scp81_keys = {}
+
+        identity = body.get('identity')
+        key_hex = body.get('keyHex') or body.get('key')
+        key_id = body.get('keyId', f"key_{len(self._local_scp81_keys) + 1}")
+        key_version = body.get('keyVersion', 1)
+        cipher_suites = body.get('cipherSuites', [])
+
+        if not identity or not key_hex:
+            return {"error": "identity and keyHex are required"}, 400
+
+        try:
+            # Validate key format
+            key_bytes = bytes.fromhex(key_hex)
+            if len(key_bytes) not in (16, 24, 32):
+                return {"error": "Key must be 16, 24, or 32 bytes (128/192/256-bit)"}, 400
+
+            # Compute KCV
+            kcv = key_bytes[:3].hex().upper()
+
+            key_entry = {
+                "keyId": key_id,
+                "identity": identity,
+                "keyVersion": key_version,
+                "algorithm": f"AES-{len(key_bytes) * 8}",
+                "cipherSuites": cipher_suites,
+                "kcv": kcv,
+                "active": True,
+            }
+
+            # If admin server is connected, try to add to server
+            if self._admin_server:
+                key_manager = getattr(self._admin_server, '_key_manager', None)
+                if key_manager:
+                    try:
+                        add_fn = getattr(key_manager, 'add_key', None)
+                        if add_fn:
+                            add_fn(identity, key_bytes, key_id=key_id, key_version=key_version)
+                            logger.info("Added PSK key to server: identity=%s, keyId=%s", identity, key_id)
+                    except Exception as e:
+                        logger.warning("Failed to add key to server: %s", e)
+
+            # Always store locally as well
+            self._local_scp81_keys[key_id] = key_entry
+            logger.info("Added PSK key locally: identity=%s, keyId=%s", identity, key_id)
+
+            return {"success": True, "key": key_entry}
+        except ValueError as e:
+            return {"error": f"Invalid key format: {e}"}, 400
+        except Exception as e:
+            logger.error("Failed to add SCP81 key: %s", e)
+            return {"error": str(e)}, 500
+
+    async def _delete_scp81_key(self, key_id: str) -> Dict[str, Any]:
+        """Delete a PSK key."""
+        # Initialize local key storage if needed
+        if not hasattr(self, '_local_scp81_keys'):
+            self._local_scp81_keys = {}
+
+        deleted_from_server = False
+        deleted_from_local = False
+
+        # Try to delete from server if connected
+        if self._admin_server:
+            try:
+                key_manager = getattr(self._admin_server, '_key_manager', None)
+                if key_manager:
+                    remove_fn = getattr(key_manager, 'remove_key', None)
+                    if remove_fn:
+                        remove_fn(key_id)
+                        deleted_from_server = True
+                        logger.info("Deleted PSK key from server: %s", key_id)
+            except KeyError:
+                pass  # Key not on server
+            except Exception as e:
+                logger.warning("Failed to delete key from server: %s", e)
+
+        # Also delete from local storage
+        if key_id in self._local_scp81_keys:
+            del self._local_scp81_keys[key_id]
+            deleted_from_local = True
+            logger.info("Deleted PSK key locally: %s", key_id)
+
+        if deleted_from_server or deleted_from_local:
+            return {"success": True, "keyId": key_id}
+        else:
+            return {"error": f"Key not found: {key_id}"}, 404
+
+    async def _get_trigger_params(self) -> Dict[str, Any]:
+        """Get session trigger parameters."""
+        if not PROTOCOL_AVAILABLE:
+            return {
+                "available": False,
+                "message": "Protocol module not available",
+            }
+
+        try:
+            # Return supported trigger parameter tags
+            return {
+                "available": True,
+                "supportedTags": {
+                    "adminUrl": "5F50",
+                    "cipherSuite": "81",
+                    "pskIdentity": "84",
+                    "retryPolicy": "85",
+                    "triggerTime": "86",
+                },
+                "retryPolicies": [
+                    {"id": 0, "name": "No retry"},
+                    {"id": 1, "name": "Retry once"},
+                    {"id": 2, "name": "Retry until success"},
+                    {"id": 3, "name": "Retry with backoff"},
+                ],
+            }
+        except Exception as e:
+            logger.error("Failed to get trigger params: %s", e)
+            return {"available": False, "error": str(e)}
+
+    async def _update_trigger_params(self, body: Dict[str, Any]) -> Dict[str, Any]:
+        """Update trigger parameters for next session."""
+        if not PROTOCOL_AVAILABLE:
+            return {"error": "Protocol module not available"}, 503
+
+        try:
+            # Store trigger params for next session
+            trigger_config = {
+                "adminUrl": body.get('adminUrl'),
+                "cipherSuite": body.get('cipherSuite'),
+                "pskIdentity": body.get('pskIdentity'),
+                "retryPolicy": body.get('retryPolicy', 0),
+            }
+
+            # Store in state for next session
+            self.state._trigger_params = trigger_config
+            logger.info("Trigger params updated: %s", trigger_config)
+            return {"success": True, "params": trigger_config}
+        except Exception as e:
+            logger.error("Failed to update trigger params: %s", e)
+            return {"error": str(e)}, 500
 
     # =========================================================================
     # TLS PSK Server API Implementation

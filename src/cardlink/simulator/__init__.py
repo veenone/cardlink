@@ -44,7 +44,7 @@ from .psk_tls_client import (
     PSKTLSClientError,
     TimeoutError,
 )
-from .virtual_uicc import ParsedAPDU, VirtualUICC
+from .virtual_uicc import LoadFileEntry, ParsedAPDU, PSKKeyEntry, SW, VirtualUICC
 
 __all__ = [
     # Main classes
@@ -68,6 +68,9 @@ __all__ = [
     "SimulatorStats",
     "VirtualApplet",
     "ParsedAPDU",
+    "PSKKeyEntry",
+    "LoadFileEntry",
+    "SW",
     # Exceptions
     "SimulatorError",
     "PSKTLSClientError",

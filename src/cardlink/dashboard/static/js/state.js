@@ -77,7 +77,7 @@ const initialState = {
   },
   // Network simulator state
   simulator: {
-    available: false,
+    available: true,  // Default to true so connect form shows
     connected: false,
     authenticated: false,
     url: '',

@@ -3,14 +3,49 @@
 This module provides a virtual UICC implementation that processes
 C-APDUs and generates R-APDUs according to ISO 7816-4 and GlobalPlatform
 specifications.
+
+Implements:
+- ETSI TS 102.226 Remote APDU support
+- GlobalPlatform RAM over HTTP v1.1.2 (Amendment B)
+- SCP '81' (PSK-TLS) key management
 """
 
 import logging
-from dataclasses import dataclass
-from typing import Callable, Dict, List, Optional, Tuple
+import os
+from dataclasses import dataclass, field
+from typing import Callable, Dict, List, Optional, Tuple, Any
 
 from .config import UICCProfile
 from .models import VirtualApplet
+
+# Import protocol layer for RAM command support
+try:
+    from cardlink.protocol import (
+        # RAM commands and types
+        InstallType,
+        KeyType,
+        PSKKeyType,
+        PSKCipherSuite,
+        CIPHER_SUITE_IDS,
+        compute_psk_kcv,
+        get_supported_cipher_suites,
+    )
+    PROTOCOL_AVAILABLE = True
+except ImportError:
+    PROTOCOL_AVAILABLE = False
+    # Define fallbacks for when protocol module isn't available
+    class InstallType:
+        LOAD = 0x02
+        INSTALL = 0x04
+        MAKE_SELECTABLE = 0x08
+        INSTALL_FOR_LOAD = 0x02
+        INSTALL_FOR_INSTALL = 0x0C
+        INSTALL_FOR_PERSONALIZATION = 0x20
+
+    class KeyType:
+        DES = 0x80
+        AES = 0x88
+        PSK_TLS = 0x85
 
 logger = logging.getLogger(__name__)
 
@@ -50,6 +85,56 @@ class SW:
     def wrong_le(correct_le: int) -> str:
         """Generate 6CXX status word."""
         return f"6C{correct_le:02X}"
+
+
+# =============================================================================
+# PSK Key Storage (GP SCP81)
+# =============================================================================
+
+
+@dataclass
+class PSKKeyEntry:
+    """PSK-TLS key entry for SCP81.
+
+    Attributes:
+        key_id: Key identifier (1-127).
+        key_version: Key version number.
+        key_type: Key type (0x85 for PSK-TLS).
+        key_data: Raw key bytes (16 or 32 bytes for AES-128/256).
+        identity: PSK identity bytes (optional).
+        cipher_suites: Supported cipher suite IDs.
+        kcv: Key check value (first 3 bytes of encrypted zeros).
+    """
+    key_id: int
+    key_version: int
+    key_type: int = 0x85  # PSK-TLS
+    key_data: bytes = b""
+    identity: bytes = b""
+    cipher_suites: List[int] = field(default_factory=list)
+    kcv: bytes = b""
+
+    def compute_kcv(self) -> bytes:
+        """Compute Key Check Value."""
+        if PROTOCOL_AVAILABLE and self.key_data:
+            return compute_psk_kcv(self.key_data)
+        # Simple fallback: first 3 bytes of key
+        return self.key_data[:3] if len(self.key_data) >= 3 else b"\x00\x00\x00"
+
+
+@dataclass
+class LoadFileEntry:
+    """Executable Load File entry.
+
+    Attributes:
+        aid: Load file AID.
+        lifecycle: Lifecycle state (0x01=Loaded, 0x07=Ready).
+        modules: List of module AIDs contained.
+        data_blocks: Loaded data blocks.
+    """
+    aid: bytes
+    lifecycle: int = 0x01
+    modules: List[bytes] = field(default_factory=list)
+    data_blocks: List[bytes] = field(default_factory=list)
 
 
 # =============================================================================
@@ -153,12 +238,19 @@ class ParsedAPDU:
             0xE6: "INSTALL",
             0xE8: "LOAD",
             0xF2: "GET STATUS",
+            0xF0: "SET STATUS",
             0x50: "INITIALIZE UPDATE",
             0x82: "EXTERNAL AUTHENTICATE",
             0x84: "GET CHALLENGE",
             0xD8: "PUT KEY",
         }
         return names.get(self.ins, f"INS_{self.ins:02X}")
+
+    @property
+    def is_ram_command(self) -> bool:
+        """Check if this is a RAM (Remote Application Management) command."""
+        ram_ins = {0xE4, 0xE6, 0xE8, 0xF2, 0xF0, 0xD8, 0xE2}
+        return self.ins in ram_ins
 
 
 # =============================================================================
@@ -194,8 +286,25 @@ class VirtualUICC:
         self._security_level: int = 0
         self._challenge: Optional[bytes] = None
 
-        # Command handlers
+        # GP SCP81 PSK-TLS key storage
+        self._psk_keys: Dict[Tuple[int, int], PSKKeyEntry] = {}  # (key_id, key_version) -> entry
+        self._psk_identity: Optional[bytes] = None
+        self._admin_url: Optional[str] = None
+
+        # Load file storage for RAM operations
+        self._load_files: Dict[str, LoadFileEntry] = {}  # AID hex -> entry
+        self._current_load_file: Optional[LoadFileEntry] = None
+
+        # Protocol statistics
+        self._ram_command_count: int = 0
+        self._delete_count: int = 0
+        self._install_count: int = 0
+        self._load_count: int = 0
+        self._put_key_count: int = 0
+
+        # Command handlers (including RAM commands)
         self._handlers: Dict[int, Callable[[ParsedAPDU], bytes]] = {
+            # Standard commands
             0xA4: self._handle_select,
             0xC0: self._handle_get_response,
             0xCA: self._handle_get_data,
@@ -204,6 +313,12 @@ class VirtualUICC:
             0x50: self._handle_initialize_update,
             0x82: self._handle_external_authenticate,
             0x84: self._handle_get_challenge,
+            # RAM commands (GP Amendment B)
+            0xE4: self._handle_delete,
+            0xE6: self._handle_install,
+            0xE8: self._handle_load,
+            0xD8: self._handle_put_key,
+            0xF0: self._handle_set_status,
         }
 
         # Pending response data (for GET RESPONSE)
@@ -225,7 +340,52 @@ class VirtualUICC:
         self._security_level = 0
         self._challenge = None
         self._pending_response = b""
-        logger.debug("UICC state reset")
+        # Clear PSK and load file storage on reset
+        self._psk_keys.clear()
+        self._psk_identity = None
+        self._admin_url = None
+        self._load_files.clear()
+        self._current_load_file = None
+        # Reset counters
+        self._ram_command_count = 0
+        self._delete_count = 0
+        self._install_count = 0
+        self._load_count = 0
+        self._put_key_count = 0
+        logger.debug("UICC state reset (including PSK keys and load files)")
+
+    @property
+    def psk_keys(self) -> Dict[Tuple[int, int], PSKKeyEntry]:
+        """Get all stored PSK keys."""
+        return self._psk_keys
+
+    @property
+    def psk_identity(self) -> Optional[bytes]:
+        """Get configured PSK identity."""
+        return self._psk_identity
+
+    @property
+    def admin_url(self) -> Optional[str]:
+        """Get configured admin server URL."""
+        return self._admin_url
+
+    @property
+    def load_files(self) -> Dict[str, LoadFileEntry]:
+        """Get all loaded executable load files."""
+        return self._load_files
+
+    @property
+    def protocol_stats(self) -> Dict[str, Any]:
+        """Get protocol operation statistics."""
+        return {
+            "ram_command_count": self._ram_command_count,
+            "delete_count": self._delete_count,
+            "install_count": self._install_count,
+            "load_count": self._load_count,
+            "put_key_count": self._put_key_count,
+            "psk_key_count": len(self._psk_keys),
+            "load_file_count": len(self._load_files),
+        }
 
     def process_apdu(self, apdu: bytes) -> bytes:
         """Process C-APDU and return R-APDU.
@@ -534,8 +694,363 @@ class VirtualUICC:
         Returns:
             R-APDU response.
         """
-        import os
         length = apdu.le or 8
         self._challenge = os.urandom(length)
         logger.debug(f"GET CHALLENGE: {self._challenge.hex().upper()}")
         return self._make_response(self._challenge, SW.SUCCESS)
+
+    # =========================================================================
+    # RAM Command Handlers (GP Amendment B / ETSI TS 102.226)
+    # =========================================================================
+
+    def _handle_delete(self, apdu: ParsedAPDU) -> bytes:
+        """Handle DELETE command (INS=E4).
+
+        Deletes an application or executable load file.
+
+        Args:
+            apdu: Parsed APDU.
+
+        Returns:
+            R-APDU response.
+        """
+        self._ram_command_count += 1
+        self._delete_count += 1
+
+        # Parse delete data - Tag 4F (AID to delete)
+        if len(apdu.data) < 3:
+            return bytes.fromhex(SW.WRONG_LENGTH)
+
+        # Simple TLV parsing for AID
+        tag = apdu.data[0]
+        if tag != 0x4F:
+            logger.warning(f"DELETE: Expected tag 4F, got {tag:02X}")
+            return bytes.fromhex(SW.WRONG_DATA)
+
+        aid_len = apdu.data[1]
+        if len(apdu.data) < 2 + aid_len:
+            return bytes.fromhex(SW.WRONG_LENGTH)
+
+        aid = apdu.data[2:2 + aid_len]
+        aid_hex = aid.hex().upper()
+
+        logger.info(f"DELETE: Deleting AID {aid_hex}")
+
+        # Check if it's a load file
+        if aid_hex in self._load_files:
+            del self._load_files[aid_hex]
+            logger.debug(f"DELETE: Removed load file {aid_hex}")
+            return bytes.fromhex(SW.SUCCESS)
+
+        # Check if it's an applet in profile
+        for i, applet in enumerate(self.profile.applets):
+            if applet.aid.upper() == aid_hex:
+                # Remove from profile (simulated)
+                logger.debug(f"DELETE: Removed applet {applet.name}")
+                return bytes.fromhex(SW.SUCCESS)
+
+        # Not found but still return success (simulating card behavior)
+        logger.debug(f"DELETE: AID {aid_hex} not found, returning success anyway")
+        return bytes.fromhex(SW.SUCCESS)
+
+    def _handle_install(self, apdu: ParsedAPDU) -> bytes:
+        """Handle INSTALL command (INS=E6).
+
+        Supports INSTALL [for load], INSTALL [for install], and
+        INSTALL [for make selectable].
+
+        Args:
+            apdu: Parsed APDU.
+
+        Returns:
+            R-APDU response.
+        """
+        self._ram_command_count += 1
+        self._install_count += 1
+
+        # P1 determines install type
+        install_type = apdu.p1
+
+        if install_type == 0x02:
+            # INSTALL [for load]
+            return self._handle_install_for_load(apdu)
+        elif install_type in (0x04, 0x0C):
+            # INSTALL [for install] or [for install and make selectable]
+            return self._handle_install_for_install(apdu)
+        elif install_type == 0x08:
+            # INSTALL [for make selectable]
+            return self._handle_install_for_make_selectable(apdu)
+        elif install_type == 0x20:
+            # INSTALL [for personalization]
+            return self._handle_install_for_personalization(apdu)
+        else:
+            logger.warning(f"INSTALL: Unsupported install type P1={install_type:02X}")
+            return bytes.fromhex(SW.INCORRECT_P1P2)
+
+    def _handle_install_for_load(self, apdu: ParsedAPDU) -> bytes:
+        """Handle INSTALL [for load] command."""
+        # Parse load file AID and security domain AID from data
+        if len(apdu.data) < 2:
+            return bytes.fromhex(SW.WRONG_LENGTH)
+
+        offset = 0
+        # Load file AID
+        lf_aid_len = apdu.data[offset]
+        offset += 1
+        if offset + lf_aid_len > len(apdu.data):
+            return bytes.fromhex(SW.WRONG_LENGTH)
+        lf_aid = apdu.data[offset:offset + lf_aid_len]
+        offset += lf_aid_len
+
+        lf_aid_hex = lf_aid.hex().upper()
+        logger.info(f"INSTALL [for load]: Load file AID = {lf_aid_hex}")
+
+        # Create new load file entry
+        self._current_load_file = LoadFileEntry(aid=lf_aid, lifecycle=0x01)
+        self._load_files[lf_aid_hex] = self._current_load_file
+
+        return bytes.fromhex(SW.SUCCESS)
+
+    def _handle_install_for_install(self, apdu: ParsedAPDU) -> bytes:
+        """Handle INSTALL [for install] command."""
+        if len(apdu.data) < 6:
+            return bytes.fromhex(SW.WRONG_LENGTH)
+
+        offset = 0
+        # Executable load file AID
+        elf_aid_len = apdu.data[offset]
+        offset += 1
+        elf_aid = apdu.data[offset:offset + elf_aid_len] if elf_aid_len > 0 else b""
+        offset += elf_aid_len
+
+        # Executable module AID
+        em_aid_len = apdu.data[offset]
+        offset += 1
+        em_aid = apdu.data[offset:offset + em_aid_len] if em_aid_len > 0 else b""
+        offset += em_aid_len
+
+        # Application AID
+        app_aid_len = apdu.data[offset]
+        offset += 1
+        app_aid = apdu.data[offset:offset + app_aid_len] if app_aid_len > 0 else b""
+        offset += app_aid_len
+
+        app_aid_hex = app_aid.hex().upper() if app_aid else "N/A"
+        logger.info(f"INSTALL [for install]: Application AID = {app_aid_hex}")
+
+        # Simulated success - applet is now installed
+        return bytes.fromhex(SW.SUCCESS)
+
+    def _handle_install_for_make_selectable(self, apdu: ParsedAPDU) -> bytes:
+        """Handle INSTALL [for make selectable] command."""
+        logger.info("INSTALL [for make selectable]")
+        return bytes.fromhex(SW.SUCCESS)
+
+    def _handle_install_for_personalization(self, apdu: ParsedAPDU) -> bytes:
+        """Handle INSTALL [for personalization] command."""
+        logger.info("INSTALL [for personalization]")
+        return bytes.fromhex(SW.SUCCESS)
+
+    def _handle_load(self, apdu: ParsedAPDU) -> bytes:
+        """Handle LOAD command (INS=E8).
+
+        Receives executable load file data blocks.
+
+        Args:
+            apdu: Parsed APDU.
+
+        Returns:
+            R-APDU response.
+        """
+        self._ram_command_count += 1
+        self._load_count += 1
+
+        # P1 indicates block number (P1 & 0x80 = last block)
+        is_last_block = (apdu.p1 & 0x80) != 0
+        block_number = apdu.p1 & 0x7F
+
+        logger.debug(f"LOAD: Block {block_number}, last={is_last_block}, size={len(apdu.data)}")
+
+        # Store block in current load file
+        if self._current_load_file:
+            self._current_load_file.data_blocks.append(apdu.data)
+            if is_last_block:
+                self._current_load_file.lifecycle = 0x01  # Loaded
+                total_size = sum(len(b) for b in self._current_load_file.data_blocks)
+                logger.info(
+                    f"LOAD: Complete - {len(self._current_load_file.data_blocks)} blocks, "
+                    f"{total_size} bytes total"
+                )
+        else:
+            logger.warning("LOAD: No current load file (missing INSTALL [for load])")
+
+        return bytes.fromhex(SW.SUCCESS)
+
+    def _handle_put_key(self, apdu: ParsedAPDU) -> bytes:
+        """Handle PUT KEY command (INS=D8).
+
+        Stores or updates cryptographic keys, including PSK-TLS keys for SCP81.
+
+        Args:
+            apdu: Parsed APDU.
+
+        Returns:
+            R-APDU response.
+        """
+        self._ram_command_count += 1
+        self._put_key_count += 1
+
+        # P1 = Key version number (or 0 for new key)
+        # P2 = Key identifier (bits 0-6) + Key type info (bit 7)
+        key_version = apdu.p1
+        key_id = apdu.p2 & 0x7F
+        multiple_keys = (apdu.p2 & 0x80) != 0
+
+        logger.info(f"PUT KEY: version={key_version}, id={key_id}, multiple={multiple_keys}")
+
+        if len(apdu.data) < 3:
+            return bytes.fromhex(SW.WRONG_LENGTH)
+
+        # Parse key data - format: key_version | key_id | key_data_TLV...
+        offset = 0
+
+        # New key version number
+        new_key_version = apdu.data[offset]
+        offset += 1
+
+        # Parse key components (simplified)
+        while offset < len(apdu.data):
+            if offset + 2 > len(apdu.data):
+                break
+
+            # Key type tag (A8 = key data)
+            tag = apdu.data[offset]
+            offset += 1
+
+            if tag == 0xA8:  # Key data
+                key_len = apdu.data[offset]
+                offset += 1
+
+                if offset + key_len > len(apdu.data):
+                    break
+
+                key_data_block = apdu.data[offset:offset + key_len]
+                offset += key_len
+
+                # Parse key type and value
+                if len(key_data_block) >= 2:
+                    key_type = key_data_block[0]
+                    key_value_len = key_data_block[1]
+                    key_value = key_data_block[2:2 + key_value_len] if len(key_data_block) >= 2 + key_value_len else b""
+
+                    # Check if this is a PSK-TLS key (type 0x85)
+                    if key_type == 0x85:
+                        logger.info(f"PUT KEY: Storing PSK-TLS key (id={key_id}, version={new_key_version})")
+
+                        entry = PSKKeyEntry(
+                            key_id=key_id,
+                            key_version=new_key_version,
+                            key_type=key_type,
+                            key_data=key_value,
+                        )
+                        entry.kcv = entry.compute_kcv()
+                        self._psk_keys[(key_id, new_key_version)] = entry
+                    else:
+                        logger.debug(f"PUT KEY: Storing key type {key_type:02X}")
+
+        # Return KCV in response (optional)
+        return bytes.fromhex(SW.SUCCESS)
+
+    def _handle_set_status(self, apdu: ParsedAPDU) -> bytes:
+        """Handle SET STATUS command (INS=F0).
+
+        Changes the lifecycle state of the card, security domain, or application.
+
+        Args:
+            apdu: Parsed APDU.
+
+        Returns:
+            R-APDU response.
+        """
+        self._ram_command_count += 1
+
+        # P1 = Status type
+        # P2 = New lifecycle state
+        status_type = apdu.p1
+        new_state = apdu.p2
+
+        logger.info(f"SET STATUS: type={status_type:02X}, new_state={new_state:02X}")
+
+        # Simulated success
+        return bytes.fromhex(SW.SUCCESS)
+
+    # =========================================================================
+    # PSK Key Management Methods
+    # =========================================================================
+
+    def add_psk_key(
+        self,
+        key_id: int,
+        key_version: int,
+        key_data: bytes,
+        identity: Optional[bytes] = None,
+        cipher_suites: Optional[List[int]] = None,
+    ) -> PSKKeyEntry:
+        """Add or update a PSK-TLS key.
+
+        Args:
+            key_id: Key identifier (1-127).
+            key_version: Key version number.
+            key_data: Raw PSK key bytes.
+            identity: Optional PSK identity.
+            cipher_suites: Optional list of supported cipher suite IDs.
+
+        Returns:
+            The created PSKKeyEntry.
+        """
+        entry = PSKKeyEntry(
+            key_id=key_id,
+            key_version=key_version,
+            key_type=0x85,  # PSK-TLS
+            key_data=key_data,
+            identity=identity or b"",
+            cipher_suites=cipher_suites or [],
+        )
+        entry.kcv = entry.compute_kcv()
+        self._psk_keys[(key_id, key_version)] = entry
+
+        if identity:
+            self._psk_identity = identity
+
+        logger.info(f"Added PSK key: id={key_id}, version={key_version}, kcv={entry.kcv.hex().upper()}")
+        return entry
+
+    def get_psk_key(self, key_id: int, key_version: int) -> Optional[PSKKeyEntry]:
+        """Get a PSK key by ID and version.
+
+        Args:
+            key_id: Key identifier.
+            key_version: Key version number.
+
+        Returns:
+            PSKKeyEntry if found, None otherwise.
+        """
+        return self._psk_keys.get((key_id, key_version))
+
+    def set_admin_url(self, url: str) -> None:
+        """Set the HTTP Admin server URL.
+
+        Args:
+            url: Admin server URL (e.g., "https://admin.example.com:8443/admin").
+        """
+        self._admin_url = url
+        logger.info(f"Set admin URL: {url}")
+
+    def set_psk_identity(self, identity: bytes) -> None:
+        """Set the PSK identity.
+
+        Args:
+            identity: PSK identity bytes.
+        """
+        self._psk_identity = identity
+        logger.info(f"Set PSK identity: {identity.hex().upper()}")

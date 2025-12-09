@@ -98,9 +98,340 @@ class DashboardApp {
   }
 
   /**
+   * Initializes the sidebar toggle functionality.
+   */
+  initSidebar() {
+    const sidebar = document.getElementById('sidebar');
+    const toggleBtn = document.getElementById('sidebar-toggle');
+
+    if (!sidebar || !toggleBtn) return;
+
+    // Load saved sidebar state
+    const isCollapsed = localStorage.getItem('sidebar-collapsed') === 'true';
+    if (isCollapsed) {
+      sidebar.classList.add('sidebar--collapsed');
+    }
+
+    // Toggle sidebar on button click
+    toggleBtn.addEventListener('click', () => {
+      sidebar.classList.toggle('sidebar--collapsed');
+      const collapsed = sidebar.classList.contains('sidebar--collapsed');
+      localStorage.setItem('sidebar-collapsed', String(collapsed));
+    });
+  }
+
+  /**
+   * Initializes the view navigation system.
+   */
+  initNavigation() {
+    const navItems = document.querySelectorAll('.sidebar__nav-item[data-view]');
+    const views = document.querySelectorAll('.view[data-view]');
+
+    if (!navItems.length || !views.length) return;
+
+    // Store current view
+    this.currentView = 'apdu-log';
+
+    // Handle navigation clicks
+    navItems.forEach(item => {
+      item.addEventListener('click', () => {
+        const viewName = item.dataset.view;
+        this.switchView(viewName);
+      });
+    });
+
+    // Load saved view from localStorage
+    const savedView = localStorage.getItem('dashboard-view');
+    if (savedView) {
+      this.switchView(savedView);
+    }
+  }
+
+  /**
+   * Switches to a specific view.
+   * @param {string} viewName - The view to switch to
+   */
+  switchView(viewName) {
+    const navItems = document.querySelectorAll('.sidebar__nav-item[data-view]');
+    const views = document.querySelectorAll('.view[data-view]');
+
+    // Update navigation items
+    navItems.forEach(item => {
+      const isActive = item.dataset.view === viewName;
+      item.classList.toggle('sidebar__nav-item--active', isActive);
+      item.setAttribute('aria-current', isActive ? 'page' : 'false');
+    });
+
+    // Update views
+    views.forEach(view => {
+      const isActive = view.dataset.view === viewName;
+      view.classList.toggle('view--active', isActive);
+    });
+
+    // Store current view
+    this.currentView = viewName;
+    localStorage.setItem('dashboard-view', viewName);
+
+    // Trigger resize for components that need it
+    window.dispatchEvent(new Event('resize'));
+  }
+
+  /**
+   * Initializes the custom APDU sender functionality.
+   */
+  initCustomApduSender() {
+    const input = document.getElementById('custom-apdu-input');
+    const form = document.getElementById('custom-apdu-form');
+    const clearBtn = document.getElementById('custom-apdu-clear');
+    const lengthEl = document.getElementById('custom-apdu-length');
+    const validationEl = document.getElementById('custom-apdu-validation');
+    const parsedEl = document.getElementById('custom-apdu-parsed');
+    const exampleBtns = document.querySelectorAll('.custom-apdu__example');
+    const historyList = document.getElementById('custom-apdu-history-list');
+    const clearHistoryBtn = document.getElementById('custom-apdu-clear-history');
+
+    if (!input || !form) return;
+
+    // Load history from localStorage
+    this.customApduHistory = JSON.parse(localStorage.getItem('custom-apdu-history') || '[]');
+    this.renderApduHistory();
+
+    // Input validation and parsing on keyup
+    input.addEventListener('input', () => {
+      const value = input.value.replace(/\s/g, '').toUpperCase();
+      const byteCount = Math.floor(value.length / 2);
+      lengthEl.textContent = `Length: ${byteCount} bytes`;
+
+      // Validate hex input
+      const isValidHex = /^[0-9A-F]*$/i.test(value);
+      const hasEvenLength = value.length % 2 === 0;
+
+      if (!value) {
+        validationEl.textContent = '';
+        validationEl.className = 'text-xs text-secondary';
+        parsedEl.innerHTML = '';
+      } else if (!isValidHex) {
+        validationEl.textContent = 'Invalid hex characters';
+        validationEl.className = 'text-xs text-danger';
+        parsedEl.innerHTML = '';
+      } else if (!hasEvenLength) {
+        validationEl.textContent = 'Odd number of hex digits';
+        validationEl.className = 'text-xs text-warning';
+        this.parseApdu(value + '0', parsedEl);
+      } else if (byteCount < 4) {
+        validationEl.textContent = 'APDU too short (min 4 bytes)';
+        validationEl.className = 'text-xs text-warning';
+        this.parseApdu(value, parsedEl);
+      } else {
+        validationEl.textContent = 'Valid APDU';
+        validationEl.className = 'text-xs text-success';
+        this.parseApdu(value, parsedEl);
+      }
+    });
+
+    // Form submission
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const value = input.value.replace(/\s/g, '').toUpperCase();
+
+      if (value.length < 8 || value.length % 2 !== 0) {
+        this.components.toast?.warning('Invalid APDU format');
+        return;
+      }
+
+      // Add to history
+      this.addToApduHistory(value);
+
+      // Send the APDU
+      await this.sendApdu(value);
+    });
+
+    // Clear button
+    clearBtn?.addEventListener('click', () => {
+      input.value = '';
+      lengthEl.textContent = 'Length: 0 bytes';
+      validationEl.textContent = '';
+      parsedEl.innerHTML = '';
+    });
+
+    // Example buttons
+    exampleBtns.forEach(btn => {
+      btn.addEventListener('click', () => {
+        const apdu = btn.dataset.apdu;
+        if (apdu) {
+          input.value = apdu;
+          input.dispatchEvent(new Event('input'));
+        }
+      });
+    });
+
+    // Clear history
+    clearHistoryBtn?.addEventListener('click', () => {
+      this.customApduHistory = [];
+      localStorage.removeItem('custom-apdu-history');
+      this.renderApduHistory();
+    });
+  }
+
+  /**
+   * Parses an APDU hex string and displays the breakdown.
+   * @param {string} hex - The hex string to parse
+   * @param {HTMLElement} container - The container to render into
+   */
+  parseApdu(hex, container) {
+    if (!container || hex.length < 8) {
+      if (container) container.innerHTML = '';
+      return;
+    }
+
+    const bytes = [];
+    for (let i = 0; i < hex.length; i += 2) {
+      bytes.push(hex.substr(i, 2));
+    }
+
+    const cla = bytes[0];
+    const ins = bytes[1];
+    const p1 = bytes[2];
+    const p2 = bytes[3];
+    const hasData = bytes.length > 5;
+    const lc = hasData ? bytes[4] : null;
+    const data = hasData ? bytes.slice(5, 5 + parseInt(lc || '0', 16)) : [];
+    const le = bytes.length > 4 && !hasData ? bytes[4] : (bytes.length > 5 + data.length ? bytes[5 + data.length] : null);
+
+    // Instruction name lookup
+    const insNames = {
+      'A4': 'SELECT',
+      'B0': 'READ BINARY',
+      'B2': 'READ RECORD',
+      'CA': 'GET DATA',
+      'CB': 'GET DATA',
+      'D6': 'UPDATE BINARY',
+      'DC': 'UPDATE RECORD',
+      'E2': 'STORE DATA',
+      'E4': 'DELETE',
+      'E6': 'INSTALL',
+      'E8': 'LOAD',
+      'F0': 'SET STATUS',
+      'F2': 'GET STATUS',
+      'D8': 'PUT KEY',
+      '82': 'EXTERNAL AUTHENTICATE',
+      '84': 'GET CHALLENGE',
+      '50': 'INIT UPDATE',
+    };
+
+    const insName = insNames[ins.toUpperCase()] || 'Unknown';
+
+    container.innerHTML = `
+      <div class="custom-apdu__parsed-header">
+        <span class="custom-apdu__parsed-name">${insName}</span>
+      </div>
+      <div class="custom-apdu__parsed-grid">
+        <div class="custom-apdu__parsed-field">
+          <span class="custom-apdu__parsed-label">CLA</span>
+          <span class="custom-apdu__parsed-value">${cla}</span>
+        </div>
+        <div class="custom-apdu__parsed-field">
+          <span class="custom-apdu__parsed-label">INS</span>
+          <span class="custom-apdu__parsed-value">${ins}</span>
+        </div>
+        <div class="custom-apdu__parsed-field">
+          <span class="custom-apdu__parsed-label">P1</span>
+          <span class="custom-apdu__parsed-value">${p1}</span>
+        </div>
+        <div class="custom-apdu__parsed-field">
+          <span class="custom-apdu__parsed-label">P2</span>
+          <span class="custom-apdu__parsed-value">${p2}</span>
+        </div>
+        ${lc ? `
+        <div class="custom-apdu__parsed-field">
+          <span class="custom-apdu__parsed-label">Lc</span>
+          <span class="custom-apdu__parsed-value">${lc} (${parseInt(lc, 16)})</span>
+        </div>` : ''}
+        ${le ? `
+        <div class="custom-apdu__parsed-field">
+          <span class="custom-apdu__parsed-label">Le</span>
+          <span class="custom-apdu__parsed-value">${le}</span>
+        </div>` : ''}
+      </div>
+      ${data.length > 0 ? `
+      <div class="custom-apdu__parsed-data">
+        <span class="custom-apdu__parsed-label">Data:</span>
+        <code class="custom-apdu__parsed-hex">${data.join(' ')}</code>
+      </div>` : ''}
+    `;
+  }
+
+  /**
+   * Adds an APDU command to the history.
+   * @param {string} apdu - The APDU hex string
+   */
+  addToApduHistory(apdu) {
+    // Remove if already exists
+    this.customApduHistory = this.customApduHistory.filter(h => h.apdu !== apdu);
+
+    // Add to front
+    this.customApduHistory.unshift({
+      apdu,
+      timestamp: Date.now()
+    });
+
+    // Keep only last 10
+    if (this.customApduHistory.length > 10) {
+      this.customApduHistory = this.customApduHistory.slice(0, 10);
+    }
+
+    // Save to localStorage
+    localStorage.setItem('custom-apdu-history', JSON.stringify(this.customApduHistory));
+
+    // Render
+    this.renderApduHistory();
+  }
+
+  /**
+   * Renders the APDU history list.
+   */
+  renderApduHistory() {
+    const historyList = document.getElementById('custom-apdu-history-list');
+    const input = document.getElementById('custom-apdu-input');
+
+    if (!historyList) return;
+
+    if (this.customApduHistory.length === 0) {
+      historyList.innerHTML = '<p class="text-xs text-secondary">No recent commands</p>';
+      return;
+    }
+
+    historyList.innerHTML = this.customApduHistory.map(item => {
+      const time = new Date(item.timestamp).toLocaleTimeString();
+      return `
+        <button type="button" class="custom-apdu__history-item" data-apdu="${item.apdu}" title="Click to use">
+          <code class="custom-apdu__history-code">${item.apdu}</code>
+          <span class="custom-apdu__history-time">${time}</span>
+        </button>
+      `;
+    }).join('');
+
+    // Add click handlers
+    historyList.querySelectorAll('.custom-apdu__history-item').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const apdu = btn.dataset.apdu;
+        if (apdu && input) {
+          input.value = apdu;
+          input.dispatchEvent(new Event('input'));
+        }
+      });
+    });
+  }
+
+  /**
    * Initializes UI components.
    */
   initComponents() {
+    // Initialize sidebar and navigation first
+    this.initSidebar();
+    this.initNavigation();
+    this.initCustomApduSender();
+
     // Toast manager
     const toastContainer = document.getElementById('toast-container');
     this.components.toast = createToastManager(toastContainer);
