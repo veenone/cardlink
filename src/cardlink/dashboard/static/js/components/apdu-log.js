@@ -49,6 +49,11 @@ export function createApduLog(elements) {
       entry.classList.add('apdu-entry--highlight');
     }
 
+    // Line number column
+    const lineNum = document.createElement('span');
+    lineNum.className = 'apdu-entry__line';
+    lineNum.textContent = index + 1;
+
     // Time column
     const time = document.createElement('span');
     time.className = 'apdu-entry__time';
@@ -108,6 +113,7 @@ export function createApduLog(elements) {
       </button>
     `;
 
+    entry.appendChild(lineNum);
     entry.appendChild(time);
     entry.appendChild(direction);
     entry.appendChild(data);

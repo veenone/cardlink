@@ -508,12 +508,9 @@
 
 .apdu-log__content {
   position: relative;
-  counter-reset: apdu-line;
 }
 
-.apdu-entry::before {
-  counter-increment: apdu-line;
-  content: counter(apdu-line);
+.apdu-entry__line {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -539,7 +536,7 @@
 /* APDU Entry */
 .apdu-entry {
   display: grid;
-  grid-template-columns: 40px 100px 80px 1fr auto;
+  grid-template-columns: 40px 100px 80px 1fr auto auto;
   gap: var(--space-3);
   align-items: center;
   padding: var(--space-2) var(--space-4);
