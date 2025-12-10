@@ -94,6 +94,14 @@ except ImportError:
     AdminServer = None
     SessionState = None
 
+# Import Scripts API (optional - for script management)
+try:
+    from cardlink.dashboard.scripts_api import ScriptsAPI
+    SCRIPTS_API_AVAILABLE = True
+except ImportError:
+    SCRIPTS_API_AVAILABLE = False
+    ScriptsAPI = None
+
 logger = logging.getLogger(__name__)
 
 # Get the static files directory
@@ -110,6 +118,7 @@ class DashboardConfig:
     static_dir: Path = STATIC_DIR
     debug: bool = False
     session_timeout_seconds: float = 0.0  # 0 = disabled, auto-close sessions after timeout
+    scripts_dir: Optional[Path] = None  # Directory to load APDU scripts from
 
 
 @dataclass
@@ -494,6 +503,15 @@ class DashboardServer:
         # Session timeout task
         self._session_timeout_task: Optional[asyncio.Task] = None
 
+        # Scripts API integration
+        self._scripts_api: Optional[Any] = None
+        if SCRIPTS_API_AVAILABLE:
+            try:
+                self._scripts_api = ScriptsAPI(scripts_dir=self.config.scripts_dir)
+                logger.info("Scripts API initialized")
+            except Exception as e:
+                logger.warning("Failed to initialize Scripts API: %s", e)
+
     def set_admin_server(self, admin_server: Any) -> None:
         """Set the AdminServer instance for dashboard integration.
 
@@ -510,6 +528,20 @@ class DashboardServer:
 
         self._admin_server = admin_server
         logger.info("Dashboard connected to AdminServer (events will be subscribed on start)")
+
+        # Wire up the Scripts API execute callback to AdminServer's queue_commands
+        if self._scripts_api and hasattr(admin_server, '_handler'):
+            def execute_commands(session_id: str, commands: list) -> None:
+                """Queue commands to AdminServer for execution."""
+                if admin_server._handler:
+                    admin_server._handler.queue_commands(session_id, commands)
+                    logger.debug("Queued %d commands for session %s via Scripts API",
+                                len(commands), session_id)
+                else:
+                    logger.warning("AdminServer handler not available for command execution")
+
+            self._scripts_api.set_execute_callback(execute_commands)
+            logger.info("Scripts API execute callback connected to AdminServer")
 
     def _subscribe_to_admin_events(self) -> None:
         """Subscribe to AdminServer events. Called from start() after loop is ready."""
@@ -1023,7 +1055,23 @@ class DashboardServer:
                 "server_available": ADMIN_SERVER_AVAILABLE,
                 "server_connected": self.is_server_connected,
                 "protocol_available": PROTOCOL_AVAILABLE,
+                "scripts_available": SCRIPTS_API_AVAILABLE and self._scripts_api is not None,
             }
+
+        # =====================================================================
+        # APDU Scripts and Templates API
+        # =====================================================================
+
+        elif path.startswith("/api/scripts") or path.startswith("/api/templates"):
+            if self._scripts_api is None:
+                status = 503
+                response = {"error": "Scripts API not available"}
+            else:
+                # Parse query params from URL (if any)
+                query_params = {}
+                response, status = self._scripts_api.handle_request(
+                    method, path, query_params, body
+                )
 
         # =====================================================================
         # Protocol Information API (GP SCP81 / ETSI TS 102.226)

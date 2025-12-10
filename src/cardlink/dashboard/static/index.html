@@ -14,6 +14,9 @@
   <link rel="stylesheet" href="/css/base.css">
   <link rel="stylesheet" href="/css/components.css">
   <link rel="stylesheet" href="/css/utilities.css">
+
+  <!-- YAML Parser for template file loading -->
+  <script src="https://cdn.jsdelivr.net/npm/js-yaml@4.1.0/dist/js-yaml.min.js"></script>
 </head>
 <body>
   <div id="app" class="app">
@@ -115,6 +118,14 @@
               <path d="M3 9h12M9 3v12"/>
             </svg>
             <span class="sidebar__nav-text">Custom APDU</span>
+          </button>
+
+          <button class="sidebar__nav-item" data-view="scripts" type="button">
+            <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5">
+              <rect x="3" y="2" width="12" height="14" rx="2"/>
+              <path d="M6 6h6M6 9h6M6 12h4"/>
+            </svg>
+            <span class="sidebar__nav-text">Scripts</span>
           </button>
 
           <button class="sidebar__nav-item" data-view="session-details" type="button">
@@ -488,6 +499,17 @@
                 <p class="text-xs text-secondary">No recent commands</p>
               </div>
             </div>
+          </div>
+        </section>
+
+        <!-- View: Scripts -->
+        <section id="view-scripts" class="view" data-view="scripts">
+          <div class="view__header">
+            <h2 class="view__title">APDU Scripts</h2>
+            <p class="view__description">Browse and execute pre-configured APDU scripts and templates.</p>
+          </div>
+          <div id="script-manager-container" class="scripts-view">
+            <!-- Script manager will be populated by JS -->
           </div>
         </section>
 

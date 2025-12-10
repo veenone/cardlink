@@ -15,6 +15,7 @@ import { createSessionPanel } from './components/session-panel.js';
 import { createCommandBuilder } from './components/command-builder.js';
 import { createSimulatorPanel } from './components/simulator-panel.js';
 import { createCommLog } from './components/comm-log.js';
+import { createScriptManager } from './components/script-manager.js';
 import { debounce } from './utils/time.js';
 import { getTooltipController } from './utils/tooltip.js';
 
@@ -507,6 +508,12 @@ class DashboardApp {
       });
     }
 
+    // Script manager
+    const scriptManagerContainer = document.getElementById('script-manager-container');
+    if (scriptManagerContainer) {
+      this.components.scriptManager = createScriptManager(scriptManagerContainer);
+    }
+
     // Setup tab switching for APDU/HTTP tabs
     this.setupCommLogTabs();
   }
@@ -643,6 +650,17 @@ class DashboardApp {
     window.addEventListener('apdu-send', async (e) => {
       const { apdu } = e.detail;
       await this.sendApdu(apdu);
+    });
+
+    // Script manager events
+    window.addEventListener('show-toast', (e) => {
+      const { message, type } = e.detail;
+      this.components.toast?.[type]?.(message) || this.components.toast?.info(message);
+    });
+
+    window.addEventListener('show-modal', (e) => {
+      const { title, content } = e.detail;
+      this.showDynamicModal(title, content);
     });
 
     // Retry event handlers
@@ -952,6 +970,55 @@ class DashboardApp {
     this.components.commLog?.clear();
     this.components.httpLog?.clear();
     this.components.toast.info('Logs cleared');
+  }
+
+  /**
+   * Shows a dynamic modal with custom content.
+   * @param {string} title - Modal title
+   * @param {string} content - HTML content
+   */
+  showDynamicModal(title, content) {
+    // Create or reuse dynamic modal
+    let modal = document.getElementById('dynamic-modal');
+    if (!modal) {
+      modal = document.createElement('div');
+      modal.id = 'dynamic-modal';
+      modal.className = 'modal';
+      modal.innerHTML = `
+        <div class="modal__overlay"></div>
+        <div class="modal__container">
+          <div class="modal__header">
+            <h3 class="modal__title"></h3>
+            <button class="modal__close" type="button" aria-label="Close modal">
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M3 3l10 10M13 3l-10 10"/>
+              </svg>
+            </button>
+          </div>
+          <div class="modal__content"></div>
+        </div>
+      `;
+      document.body.appendChild(modal);
+
+      // Close handlers
+      const closeModal = () => modal.classList.remove('modal--active');
+      modal.querySelector('.modal__overlay').addEventListener('click', closeModal);
+      modal.querySelector('.modal__close').addEventListener('click', closeModal);
+
+      // Escape key handler
+      document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && modal.classList.contains('modal--active')) {
+          closeModal();
+        }
+      });
+    }
+
+    // Update content
+    modal.querySelector('.modal__title').textContent = title;
+    modal.querySelector('.modal__content').innerHTML = content;
+
+    // Show modal
+    modal.classList.add('modal--active');
   }
 
   /**

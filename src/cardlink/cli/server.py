@@ -261,6 +261,11 @@ def cli(ctx: click.Context, verbose: bool, debug: bool) -> None:
     is_flag=True,
     help="Run server in foreground with console output instead of backgrounding (useful for debugging)",
 )
+@click.option(
+    "--scripts-dir",
+    type=click.Path(exists=True, file_okay=False, dir_okay=True, path_type=Path),
+    help="Directory containing APDU script YAML files (default: uses built-in scripts)",
+)
 @click.pass_context
 def start(
     ctx: click.Context,
@@ -277,6 +282,7 @@ def start(
     dashboard_port: int,
     dashboard_session_timeout: float,
     foreground: bool,
+    scripts_dir: Optional[Path],
 ) -> None:
     """Start the PSK-TLS Admin Server.
 
@@ -441,6 +447,7 @@ def start(
                         host=host if host != "0.0.0.0" else "127.0.0.1",
                         port=dashboard_port,
                         session_timeout_seconds=dashboard_session_timeout,
+                        scripts_dir=scripts_dir,
                     )
                     dashboard_server = DashboardServer(dashboard_config)
                     dashboard_server.set_admin_server(server)
@@ -467,6 +474,8 @@ def start(
                         f"Dashboard started at http://{dashboard_config.host}:{dashboard_port}",
                         fg="cyan",
                     ))
+                    if scripts_dir:
+                        click.echo(f"  Scripts directory: {scripts_dir}")
                 except Exception as e:
                     click.echo(click.style(
                         f"Warning: Failed to start dashboard: {e}",

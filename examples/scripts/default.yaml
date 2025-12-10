@@ -1,0 +1,505 @@
+# Default APDU Scripts for GlobalPlatform Testing
+# Provides common scripts and templates for UICC/smartcard operations
+
+scripts:
+  # =============================================================================
+  # Basic Selection Commands
+  # =============================================================================
+  - id: select-isd
+    name: Select ISD
+    description: Select the Issuer Security Domain (default card manager)
+    commands:
+      - hex: "00A4040000"
+        name: SELECT ISD
+    tags:
+      - basic
+      - select
+      - isd
+
+  - id: select-mf
+    name: Select Master File
+    description: Select the Master File (MF) - root of the file system
+    commands:
+      - hex: "00A4000C023F00"
+        name: SELECT MF
+    tags:
+      - basic
+      - select
+      - file
+
+  # =============================================================================
+  # Card Information Commands
+  # =============================================================================
+  - id: get-cplc
+    name: Get CPLC Data
+    description: Retrieve Card Production Life Cycle data
+    commands:
+      - hex: "80CA9F7F00"
+        name: GET DATA (CPLC)
+    tags:
+      - info
+      - cplc
+
+  - id: get-card-data
+    name: Get Card Data
+    description: Retrieve GlobalPlatform Card Recognition Data
+    commands:
+      - hex: "80CA006600"
+        name: GET DATA (Card Recognition Data)
+    tags:
+      - info
+      - gp
+
+  - id: get-key-info
+    name: Get Key Information
+    description: Retrieve key information template
+    commands:
+      - hex: "80CA00E000"
+        name: GET DATA (Key Information Template)
+    tags:
+      - info
+      - keys
+
+  - id: get-sequence-counter
+    name: Get Sequence Counter
+    description: Retrieve current sequence counter value
+    commands:
+      - hex: "80CA00C100"
+        name: GET DATA (Sequence Counter)
+    tags:
+      - info
+      - security
+
+  - id: get-iccid
+    name: Get ICCID
+    description: Read the Integrated Circuit Card ID
+    commands:
+      - hex: "00A40004023F00"
+        name: SELECT MF
+      - hex: "00A40004022FE2"
+        name: SELECT EF_ICCID
+      - hex: "00B000000A"
+        name: READ BINARY
+    tags:
+      - info
+      - iccid
+      - uicc
+
+  - id: get-imsi
+    name: Get IMSI
+    description: Read the International Mobile Subscriber Identity
+    commands:
+      - hex: "00A40004023F00"
+        name: SELECT MF
+      - hex: "00A40004027F20"
+        name: SELECT DF_GSM
+      - hex: "00A40004026F07"
+        name: SELECT EF_IMSI
+      - hex: "00B0000009"
+        name: READ BINARY
+    tags:
+      - info
+      - imsi
+      - uicc
+
+  # =============================================================================
+  # Status Commands
+  # =============================================================================
+  - id: get-status-isd
+    name: Get ISD Status
+    description: Get status of the Issuer Security Domain
+    commands:
+      - hex: "80F2800000"
+        name: GET STATUS (ISD)
+    tags:
+      - status
+      - isd
+
+  - id: get-status-apps
+    name: Get Applications Status
+    description: List all applications installed on the card
+    commands:
+      - hex: "80F2400000"
+        name: GET STATUS (Applications)
+    tags:
+      - status
+      - apps
+
+  - id: get-status-load-files
+    name: Get Load Files Status
+    description: List all load files on the card
+    commands:
+      - hex: "80F2200000"
+        name: GET STATUS (Load Files)
+    tags:
+      - status
+      - load-files
+
+  - id: get-status-sd
+    name: Get Security Domains Status
+    description: List all Security Domains
+    commands:
+      - hex: "80F2800200"
+        name: GET STATUS (Security Domains)
+    tags:
+      - status
+      - sd
+
+  - id: get-card-status-full
+    name: Full Card Status
+    description: Retrieve complete card status (ISD, Apps, Load Files)
+    commands:
+      - hex: "80F2800000"
+        name: GET STATUS (ISD)
+      - hex: "80F2400000"
+        name: GET STATUS (Applications)
+      - hex: "80F2200000"
+        name: GET STATUS (Load Files)
+    tags:
+      - status
+      - full
+
+  # =============================================================================
+  # UICC Specific Commands
+  # =============================================================================
+  - id: terminal-profile
+    name: Terminal Profile
+    description: Set terminal capabilities (ETSI TS 102 223)
+    commands:
+      - hex: "A010000011FFFF9F87FF0187000000000000000000"
+        name: TERMINAL PROFILE
+    tags:
+      - uicc
+      - stk
+
+  - id: get-response
+    name: Get Response
+    description: Retrieve pending response data
+    commands:
+      - hex: "00C0000000"
+        name: GET RESPONSE
+    tags:
+      - basic
+      - response
+
+  - id: fetch
+    name: Fetch Proactive Command
+    description: Fetch pending proactive command from UICC
+    commands:
+      - hex: "A012000000"
+        name: FETCH
+    tags:
+      - uicc
+      - stk
+      - proactive
+
+  # =============================================================================
+  # Test/Debug Commands
+  # =============================================================================
+  - id: echo-test
+    name: Echo Test
+    description: Simple echo command for connectivity testing
+    commands:
+      - hex: "8010000004DEADBEEF00"
+        name: ECHO
+    tags:
+      - test
+      - debug
+
+
+templates:
+  # =============================================================================
+  # Selection Templates
+  # =============================================================================
+  - id: select-aid
+    name: Select by AID
+    description: Select application by its Application Identifier
+    commands:
+      - hex: "00A40400${AID}00"
+        name: SELECT by AID
+    parameters:
+      AID:
+        type: hex
+        description: Application Identifier (5-16 bytes)
+        min_length: 5
+        max_length: 16
+        required: true
+    tags:
+      - template
+      - select
+
+  - id: select-file
+    name: Select File
+    description: Select a file by File ID
+    commands:
+      - hex: "00A4000C02${FILE_ID}"
+        name: SELECT FILE
+    parameters:
+      FILE_ID:
+        type: hex
+        description: 2-byte File ID
+        min_length: 2
+        max_length: 2
+        required: true
+    tags:
+      - template
+      - select
+      - file
+
+  - id: select-path
+    name: Select by Path
+    description: Select file by path from MF
+    commands:
+      - hex: "00A40804${PATH}"
+        name: SELECT by PATH
+    parameters:
+      PATH:
+        type: hex
+        description: Path from MF (2+ bytes, even length)
+        min_length: 2
+        required: true
+    tags:
+      - template
+      - select
+      - file
+
+  # =============================================================================
+  # Data Access Templates
+  # =============================================================================
+  - id: read-binary
+    name: Read Binary
+    description: Read binary data from current file
+    commands:
+      - hex: "00B0${OFFSET}${LENGTH}"
+        name: READ BINARY
+    parameters:
+      OFFSET:
+        type: hex
+        description: 2-byte offset (high byte, low byte)
+        min_length: 2
+        max_length: 2
+        default: "0000"
+      LENGTH:
+        type: hex
+        description: Number of bytes to read (1 byte, 00 = 256)
+        min_length: 1
+        max_length: 1
+        default: "00"
+    tags:
+      - template
+      - read
+      - file
+
+  - id: read-record
+    name: Read Record
+    description: Read a record from current record-based file
+    commands:
+      - hex: "00B2${RECORD}04${LENGTH}"
+        name: READ RECORD
+    parameters:
+      RECORD:
+        type: hex
+        description: Record number (1 byte)
+        min_length: 1
+        max_length: 1
+        required: true
+      LENGTH:
+        type: hex
+        description: Expected record length (1 byte)
+        min_length: 1
+        max_length: 1
+        default: "00"
+    tags:
+      - template
+      - read
+      - record
+
+  - id: update-binary
+    name: Update Binary
+    description: Update binary data in current file
+    commands:
+      - hex: "00D6${OFFSET}${DATA}"
+        name: UPDATE BINARY
+    parameters:
+      OFFSET:
+        type: hex
+        description: 2-byte offset
+        min_length: 2
+        max_length: 2
+        default: "0000"
+      DATA:
+        type: hex
+        description: Data to write
+        required: true
+    tags:
+      - template
+      - write
+      - file
+
+  - id: get-data
+    name: GET DATA
+    description: Retrieve data object by tag
+    commands:
+      - hex: "80CA${TAG}00"
+        name: GET DATA
+    parameters:
+      TAG:
+        type: hex
+        description: 2-byte BER-TLV tag
+        min_length: 2
+        max_length: 2
+        required: true
+    tags:
+      - template
+      - gp
+      - data
+
+  # =============================================================================
+  # Status Templates
+  # =============================================================================
+  - id: get-status-filter
+    name: Get Status with Filter
+    description: Get status of applications matching AID prefix
+    commands:
+      - hex: "80F2${SCOPE}02${AID_PREFIX}"
+        name: GET STATUS (filtered)
+    parameters:
+      SCOPE:
+        type: hex
+        description: "Scope: 80=ISD, 40=Apps, 20=Load Files"
+        min_length: 1
+        max_length: 1
+        default: "40"
+      AID_PREFIX:
+        type: hex
+        description: AID prefix to filter (4F + length + AID)
+        required: true
+    tags:
+      - template
+      - status
+
+  # =============================================================================
+  # Security Templates
+  # =============================================================================
+  - id: init-update
+    name: Initialize Update
+    description: Start SCP02/SCP03 authentication
+    commands:
+      - hex: "80500000${HOST_CHALLENGE}00"
+        name: INITIALIZE UPDATE
+    parameters:
+      HOST_CHALLENGE:
+        type: hex
+        description: 8-byte random host challenge
+        min_length: 8
+        max_length: 8
+        required: true
+    tags:
+      - template
+      - security
+      - scp
+
+  - id: external-auth
+    name: External Authenticate
+    description: Complete SCP authentication with host cryptogram
+    commands:
+      - hex: "8482${SECURITY_LEVEL}00${HOST_CRYPTOGRAM}"
+        name: EXTERNAL AUTHENTICATE
+    parameters:
+      SECURITY_LEVEL:
+        type: hex
+        description: Security level (01=MAC, 03=MAC+ENC)
+        min_length: 1
+        max_length: 1
+        default: "03"
+      HOST_CRYPTOGRAM:
+        type: hex
+        description: 8-byte host cryptogram
+        min_length: 8
+        max_length: 8
+        required: true
+    tags:
+      - template
+      - security
+      - scp
+
+  # =============================================================================
+  # STORE DATA Template
+  # =============================================================================
+  - id: store-data
+    name: Store Data
+    description: Store data on the card (STORE DATA command)
+    commands:
+      - hex: "80E2${P1}${P2}${DATA}"
+        name: STORE DATA
+    parameters:
+      P1:
+        type: hex
+        description: "Block info (80=last, 00=more)"
+        min_length: 1
+        max_length: 1
+        default: "80"
+      P2:
+        type: hex
+        description: "Structure (00=None, 01=DGI, 02=BER-TLV)"
+        min_length: 1
+        max_length: 1
+        default: "00"
+      DATA:
+        type: hex
+        description: Data to store
+        required: true
+    tags:
+      - template
+      - gp
+      - store
+
+  # =============================================================================
+  # PUT KEY Template
+  # =============================================================================
+  - id: put-key
+    name: Put Key
+    description: Install or update cryptographic keys
+    commands:
+      - hex: "80D8${P1}${P2}${KEY_DATA}"
+        name: PUT KEY
+    parameters:
+      P1:
+        type: hex
+        description: Key version number (00 = new key set)
+        min_length: 1
+        max_length: 1
+        default: "00"
+      P2:
+        type: hex
+        description: Key identifier
+        min_length: 1
+        max_length: 1
+        required: true
+      KEY_DATA:
+        type: hex
+        description: Key data template (formatted per GP spec)
+        required: true
+    tags:
+      - template
+      - security
+      - keys
+
+  # =============================================================================
+  # Terminal Response Template
+  # =============================================================================
+  - id: terminal-response
+    name: Terminal Response
+    description: Send TERMINAL RESPONSE to UICC
+    commands:
+      - hex: "A014000${DATA}"
+        name: TERMINAL RESPONSE
+    parameters:
+      DATA:
+        type: hex
+        description: Response data (BER-TLV encoded)
+        required: true
+    tags:
+      - template
+      - uicc
+      - stk

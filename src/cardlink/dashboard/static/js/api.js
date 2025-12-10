@@ -427,6 +427,149 @@ export function createAPIClient(config = {}) {
     getServerConfig() {
       return this.get('/server/config');
     },
+
+    // =========================================================================
+    // Script Endpoints
+    // =========================================================================
+
+    /**
+     * Gets all scripts.
+     * @returns {Promise<Object>} Scripts list
+     */
+    getScripts() {
+      return this.get('/scripts');
+    },
+
+    /**
+     * Gets a specific script.
+     * @param {string} scriptId - Script ID
+     * @returns {Promise<Object>} Script
+     */
+    getScript(scriptId) {
+      return this.get(`/scripts/${encodeURIComponent(scriptId)}`);
+    },
+
+    /**
+     * Creates a new script.
+     * @param {Object} script - Script data
+     * @returns {Promise<Object>} Created script
+     */
+    createScript(script) {
+      return this.post('/scripts', script);
+    },
+
+    /**
+     * Updates a script.
+     * @param {string} scriptId - Script ID
+     * @param {Object} script - Script data
+     * @returns {Promise<Object>} Updated script
+     */
+    updateScript(scriptId, script) {
+      return this.put(`/scripts/${encodeURIComponent(scriptId)}`, script);
+    },
+
+    /**
+     * Deletes a script.
+     * @param {string} scriptId - Script ID
+     * @returns {Promise<void>}
+     */
+    deleteScript(scriptId) {
+      return this.delete(`/scripts/${encodeURIComponent(scriptId)}`);
+    },
+
+    /**
+     * Executes a script for a session.
+     * @param {string} sessionId - Session ID
+     * @param {string} scriptId - Script ID
+     * @returns {Promise<Object>} Execution result
+     */
+    executeScript(sessionId, scriptId) {
+      return this.post(`/scripts/${encodeURIComponent(scriptId)}/execute`, { sessionId });
+    },
+
+    // =========================================================================
+    // Template Endpoints
+    // =========================================================================
+
+    /**
+     * Gets all templates.
+     * @returns {Promise<Object>} Templates list
+     */
+    getTemplates() {
+      return this.get('/templates');
+    },
+
+    /**
+     * Gets a specific template.
+     * @param {string} templateId - Template ID
+     * @returns {Promise<Object>} Template
+     */
+    getTemplate(templateId) {
+      return this.get(`/templates/${encodeURIComponent(templateId)}`);
+    },
+
+    /**
+     * Creates a new template.
+     * @param {Object} template - Template data
+     * @returns {Promise<Object>} Created template
+     */
+    createTemplate(template) {
+      return this.post('/templates', template);
+    },
+
+    /**
+     * Updates a template.
+     * @param {string} templateId - Template ID
+     * @param {Object} template - Template data
+     * @returns {Promise<Object>} Updated template
+     */
+    updateTemplate(templateId, template) {
+      return this.put(`/templates/${encodeURIComponent(templateId)}`, template);
+    },
+
+    /**
+     * Deletes a template.
+     * @param {string} templateId - Template ID
+     * @returns {Promise<void>}
+     */
+    deleteTemplate(templateId) {
+      return this.delete(`/templates/${encodeURIComponent(templateId)}`);
+    },
+
+    /**
+     * Renders a template with parameters.
+     * @param {string} templateId - Template ID
+     * @param {Object} params - Template parameters
+     * @returns {Promise<Object>} Rendered commands
+     */
+    renderTemplate(templateId, params) {
+      return this.post(`/templates/${encodeURIComponent(templateId)}/render`, { params });
+    },
+
+    /**
+     * Previews a rendered template.
+     * @param {string} templateId - Template ID
+     * @param {Object} params - Template parameters
+     * @returns {Promise<Object>} Preview result
+     */
+    previewTemplate(templateId, params) {
+      return this.post(`/templates/${encodeURIComponent(templateId)}/preview`, { params });
+    },
+
+    /**
+     * Renders and executes a template for a session.
+     * @param {string} sessionId - Session ID
+     * @param {string} templateId - Template ID
+     * @param {Object} params - Template parameters
+     * @returns {Promise<Object>} Execution result
+     */
+    renderAndExecuteTemplate(sessionId, templateId, params) {
+      return this.post(`/templates/${encodeURIComponent(templateId)}/render`, {
+        sessionId,
+        params,
+        execute: true,
+      });
+    },
   };
 }
 
