@@ -25,8 +25,10 @@ if TYPE_CHECKING:
     from cardlink.database.repositories.card_repository import CardRepository
     from cardlink.database.repositories.device_repository import DeviceRepository
     from cardlink.database.repositories.log_repository import LogRepository
+    from cardlink.database.repositories.script_repository import ScriptRepository
     from cardlink.database.repositories.session_repository import SessionRepository
     from cardlink.database.repositories.setting_repository import SettingRepository
+    from cardlink.database.repositories.template_repository import TemplateRepository
     from cardlink.database.repositories.test_repository import TestRepository
 
 
@@ -260,3 +262,25 @@ class UnitOfWork:
         from cardlink.database.repositories.setting_repository import SettingRepository
 
         return self._get_repository(SettingRepository)
+
+    @property
+    def scripts(self) -> "ScriptRepository":
+        """Get script repository.
+
+        Returns:
+            ScriptRepository instance.
+        """
+        from cardlink.database.repositories.script_repository import ScriptRepository
+
+        return self._get_repository(ScriptRepository)
+
+    @property
+    def templates(self) -> "TemplateRepository":
+        """Get template repository.
+
+        Returns:
+            TemplateRepository instance.
+        """
+        from cardlink.database.repositories.template_repository import TemplateRepository
+
+        return self._get_repository(TemplateRepository)

@@ -58,6 +58,7 @@ from cardlink.scripts.renderer import (
     validate_params,
 )
 from cardlink.scripts.manager import ScriptManager
+from cardlink.scripts.db_manager import DatabaseScriptManager
 
 __all__ = [
     # Models
@@ -68,6 +69,7 @@ __all__ = [
     "ParameterType",
     # Manager
     "ScriptManager",
+    "DatabaseScriptManager",
     # Exceptions
     "ScriptError",
     "ScriptNotFoundError",

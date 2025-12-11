@@ -10,6 +10,7 @@ Example:
     ...     CommLog, CommDirection,
     ...     TestResult, TestStatus,
     ...     Setting,
+    ...     Script, Template,
     ... )
 """
 
@@ -24,8 +25,10 @@ from cardlink.database.models.enums import (
     SessionStatus,
     TestStatus,
 )
+from cardlink.database.models.script import Script
 from cardlink.database.models.session import OTASession
 from cardlink.database.models.setting import Setting, SettingKeys
+from cardlink.database.models.template import Template
 from cardlink.database.models.test_result import TestResult
 
 __all__ = [
@@ -48,4 +51,6 @@ __all__ = [
     "TestResult",
     "Setting",
     "SettingKeys",
+    "Script",
+    "Template",
 ]
