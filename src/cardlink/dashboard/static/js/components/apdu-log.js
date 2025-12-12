@@ -43,6 +43,11 @@ export function createApduLog(elements) {
       entry.classList.add('apdu-entry--selected');
     }
 
+    // Check if manually sent APDU
+    if (apdu.metadata?.manual) {
+      entry.classList.add('apdu-entry--manual');
+    }
+
     // Check for highlight patterns
     const alertPatterns = state.get('settings.alertPatterns') || [];
     if (apdu.sw && alertPatterns.some(p => normalizeHex(apdu.sw).includes(normalizeHex(p)))) {
@@ -77,6 +82,20 @@ export function createApduLog(elements) {
         </svg>
         RSP
       `;
+    }
+
+    // Command info column (instruction name + case for commands)
+    const cmdInfoCol = document.createElement('span');
+    cmdInfoCol.className = 'apdu-entry__cmd-info';
+
+    if (apdu.direction === 'command') {
+      const cmdInfo = getApduCommandInfo(apdu);
+      if (cmdInfo) {
+        cmdInfoCol.innerHTML = `
+          <span class="apdu-entry__ins-name" title="${cmdInfo.insName}">${cmdInfo.insName}</span>
+          <span class="apdu-case-badge apdu-case-badge--case${cmdInfo.apduCase}" title="${cmdInfo.apduCaseName}">C${cmdInfo.apduCase}</span>
+        `;
+      }
     }
 
     // Data column
@@ -116,6 +135,7 @@ export function createApduLog(elements) {
     entry.appendChild(lineNum);
     entry.appendChild(time);
     entry.appendChild(direction);
+    entry.appendChild(cmdInfoCol);
     entry.appendChild(data);
     entry.appendChild(sw);
     entry.appendChild(actions);
@@ -150,6 +170,25 @@ export function createApduLog(elements) {
       }
     }
     return formatHex(apdu.data || '');
+  }
+
+  /**
+   * Gets APDU command info including case.
+   * @param {Object} apdu - APDU data
+   * @returns {Object} Command info with case
+   */
+  function getApduCommandInfo(apdu) {
+    if (apdu.direction === 'command') {
+      const parsed = parseCommand(apdu.data);
+      if (parsed.valid) {
+        return {
+          insName: parsed.insName,
+          apduCase: parsed.apduCase,
+          apduCaseName: parsed.apduCaseName,
+        };
+      }
+    }
+    return null;
   }
 
   /**
@@ -420,7 +459,11 @@ export function createApduLog(elements) {
     const apdus = state.getFilteredApdus();
     const totalApdus = state.get('apdus').length;
 
-    updateEmptyState(totalApdus === 0);
+    if (totalApdus === 0) {
+      updateStateContainer('empty');
+    } else {
+      updateStateContainer('hidden');
+    }
     updateCount(totalApdus, apdus.length);
 
     if (!virtualScroller) {
@@ -446,7 +489,7 @@ export function createApduLog(elements) {
       virtualScroller.clear();
     }
 
-    updateEmptyState(true);
+    updateStateContainer('empty');
     updateCount(0);
   }
 

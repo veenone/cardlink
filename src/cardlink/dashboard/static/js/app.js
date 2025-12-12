@@ -299,11 +299,33 @@ class DashboardApp {
     const data = hasData ? bytes.slice(5, 5 + parseInt(lc || '0', 16)) : [];
     const le = bytes.length > 4 && !hasData ? bytes[4] : (bytes.length > 5 + data.length ? bytes[5 + data.length] : null);
 
+    // Determine APDU Case per ETSI TS 102.221 Annex C
+    // Case 1: CLA INS P1 P2 (no data, no Le)
+    // Case 2: CLA INS P1 P2 Le (no data, Le present)
+    // Case 3: CLA INS P1 P2 Lc Data (data present, no Le)
+    // Case 4: CLA INS P1 P2 Lc Data Le (data and Le present)
+    let apduCase = 1;
+    let apduCaseDesc = 'No data, no response expected';
+    if (!hasData && !le) {
+      apduCase = 1;
+      apduCaseDesc = 'No data, no response expected';
+    } else if (!hasData && le) {
+      apduCase = 2;
+      apduCaseDesc = 'No data, response expected';
+    } else if (hasData && !le) {
+      apduCase = 3;
+      apduCaseDesc = 'Data sent, no response expected';
+    } else {
+      apduCase = 4;
+      apduCaseDesc = 'Data sent, response expected';
+    }
+
     // Instruction name lookup
     const insNames = {
       'A4': 'SELECT',
       'B0': 'READ BINARY',
       'B2': 'READ RECORD',
+      'C0': 'GET RESPONSE',
       'CA': 'GET DATA',
       'CB': 'GET DATA',
       'D6': 'UPDATE BINARY',
@@ -325,6 +347,7 @@ class DashboardApp {
     container.innerHTML = `
       <div class="custom-apdu__parsed-header">
         <span class="custom-apdu__parsed-name">${insName}</span>
+        <span class="apdu-case-badge apdu-case-badge--case${apduCase}" title="${apduCaseDesc}">Case ${apduCase}</span>
       </div>
       <div class="custom-apdu__parsed-grid">
         <div class="custom-apdu__parsed-field">
@@ -600,13 +623,24 @@ class DashboardApp {
     const clearBtn = document.getElementById('clear-btn');
     clearBtn?.addEventListener('click', () => this.clearLogs());
 
-    // Auto-scroll button
+    // Auto-scroll button for APDU Log
     const autoScrollBtn = document.getElementById('auto-scroll-btn');
     autoScrollBtn?.addEventListener('click', () => {
       const current = this.components.apduLog.isAutoScroll();
       this.components.apduLog.setAutoScroll(!current);
       autoScrollBtn.setAttribute('aria-pressed', String(!current));
       autoScrollBtn.title = !current ? 'Auto-scroll enabled' : 'Auto-scroll disabled';
+      autoScrollBtn.classList.toggle('btn--active', !current);
+    });
+
+    // Auto-scroll button for Communication Log
+    const commAutoScrollBtn = document.getElementById('comm-auto-scroll-btn');
+    commAutoScrollBtn?.addEventListener('click', () => {
+      const current = this.components.commLog.isAutoScroll();
+      this.components.commLog.setAutoScroll(!current);
+      commAutoScrollBtn.setAttribute('aria-pressed', String(!current));
+      commAutoScrollBtn.title = !current ? 'Auto-scroll enabled' : 'Auto-scroll disabled';
+      commAutoScrollBtn.classList.toggle('btn--active', !current);
     });
 
     // Export format tabs
@@ -647,9 +681,14 @@ class DashboardApp {
       await this.loadSessionData(sessionId);
     });
 
+    window.addEventListener('session-closed', () => {
+      // Clear session details when session is closed
+      this.updateSessionDetails(null);
+    });
+
     window.addEventListener('apdu-send', async (e) => {
-      const { apdu } = e.detail;
-      await this.sendApdu(apdu);
+      const { apdu, payloadFormat } = e.detail;
+      await this.sendApdu(apdu, true, payloadFormat);
     });
 
     // Script manager events
@@ -707,6 +746,20 @@ class DashboardApp {
 
     wsClient.onMessage('session.updated', (payload) => {
       state.updateSession(payload.id, payload);
+    });
+
+    // Handle session_updated event from AdminServer (with identifiers)
+    wsClient.onMessage('session_updated', (payload) => {
+      // Extract session from payload (server sends {session: {...}})
+      const session = payload.session || payload;
+      if (session && session.id) {
+        state.updateSession(session.id, session);
+        // Refresh details if this is the active session
+        const activeId = state.get('activeSessionId');
+        if (session.id === activeId) {
+          this.updateSessionDetails(session);
+        }
+      }
     });
 
     wsClient.onMessage('session.deleted', (payload) => {
@@ -880,9 +933,14 @@ class DashboardApp {
     this.components.apduLog?.setLoading(true);
 
     try {
+      // Load APDUs
       const apdus = await api.getApdus(sessionId);
       state.set('apdus', apdus);
       this.components.apduLog?.setError(null);
+
+      // Load session details and update the session details view
+      const session = await api.getSession(sessionId);
+      this.updateSessionDetails(session, apdus);
     } catch (error) {
       console.error('Failed to load session data:', error);
       this.components.apduLog?.setError(error.message || 'Failed to load session data');
@@ -893,10 +951,132 @@ class DashboardApp {
   }
 
   /**
+   * Updates the session details view with session data.
+   * @param {Object} session - Session data
+   * @param {Array} apdus - APDU history
+   */
+  updateSessionDetails(session, apdus = []) {
+    const emptyEl = document.getElementById('session-details-empty');
+    const contentEl = document.getElementById('session-details-content');
+
+    if (!session) {
+      // Show empty state
+      emptyEl?.classList.remove('hidden');
+      contentEl?.classList.add('hidden');
+      return;
+    }
+
+    // Hide empty state, show content
+    emptyEl?.classList.add('hidden');
+    contentEl?.classList.remove('hidden');
+
+    // Helper to safely set text content
+    const setText = (id, value) => {
+      const el = document.getElementById(id);
+      if (el) el.textContent = value ?? '-';
+    };
+
+    // Session Information
+    setText('session-detail-id', session.id || '-');
+    setText('session-detail-status', this.formatStatus(session.status));
+    setText('session-detail-created', this.formatDateTime(session.createdAt || session.created_at));
+    setText('session-detail-last-activity', this.formatDateTime(session.updatedAt || session.updated_at));
+    setText('session-detail-duration', this.formatDuration(session.createdAt || session.created_at));
+
+    // Connection Details
+    const clientAddr = session.metadata?.client_ip || session.client_ip || session.metadata?.clientIp || '-';
+    const [clientIp, clientPort] = clientAddr.includes(':') ? clientAddr.split(':') : [clientAddr, '-'];
+    setText('session-detail-client-ip', clientIp);
+    setText('session-detail-client-port', clientPort);
+    setText('session-detail-psk-identity', session.metadata?.psk_identity || session.psk_identity || session.metadata?.pskIdentity || '-');
+    setText('session-detail-tls-version', session.tlsVersion || session.tls_version || session.metadata?.tls_version || '-');
+    setText('session-detail-cipher', session.cipherSuite || session.cipher_suite || session.metadata?.cipher_suite || '-');
+
+    // Statistics
+    const totalCmds = apdus?.length || session.apduCount || session.apdu_count || 0;
+    const successCount = apdus?.filter(a => {
+      const sw = a.sw || '';
+      return sw.startsWith('90') || sw.startsWith('61');
+    }).length || 0;
+    const errorCount = totalCmds - successCount;
+    setText('session-detail-total-cmds', totalCmds.toString());
+    setText('session-detail-success', successCount.toString());
+    setText('session-detail-errors', errorCount.toString());
+    setText('session-detail-avg-time', '-'); // Would require timing data
+
+    // Card Information (per GP Amendment B / ETSI TS 102.226)
+    // Identifiers extracted from X-Admin-From header URI
+    const iccid = session.iccid || session.metadata?.iccid || '-';
+    const eid = session.eid || session.metadata?.eid || '-';
+    const imei = session.imei || session.metadata?.imei || '-';
+    const seid = session.seid || session.metadata?.seid || '-';
+    setText('session-detail-iccid', iccid);
+    setText('session-detail-eid', eid);
+    setText('session-detail-imei', imei);
+    setText('session-detail-seid', seid);
+    setText('session-detail-tar', session.metadata?.tar || '-');
+  }
+
+  /**
+   * Formats session status for display.
+   * @param {string} status - Status value
+   * @returns {string} Formatted status
+   */
+  formatStatus(status) {
+    if (!status) return '-';
+    return status.charAt(0).toUpperCase() + status.slice(1).toLowerCase();
+  }
+
+  /**
+   * Formats a date/time value for display.
+   * @param {string|number|Date} value - Date value
+   * @returns {string} Formatted date string
+   */
+  formatDateTime(value) {
+    if (!value) return '-';
+    try {
+      const date = new Date(value);
+      if (isNaN(date.getTime())) return '-';
+      return date.toLocaleString();
+    } catch {
+      return '-';
+    }
+  }
+
+  /**
+   * Formats duration from start time to now.
+   * @param {string|number|Date} startTime - Start time
+   * @returns {string} Formatted duration
+   */
+  formatDuration(startTime) {
+    if (!startTime) return '-';
+    try {
+      const start = new Date(startTime);
+      if (isNaN(start.getTime())) return '-';
+      const durationMs = Date.now() - start.getTime();
+      const seconds = Math.floor(durationMs / 1000);
+      const minutes = Math.floor(seconds / 60);
+      const hours = Math.floor(minutes / 60);
+
+      if (hours > 0) {
+        return `${hours}h ${minutes % 60}m`;
+      } else if (minutes > 0) {
+        return `${minutes}m ${seconds % 60}s`;
+      } else {
+        return `${seconds}s`;
+      }
+    } catch {
+      return '-';
+    }
+  }
+
+  /**
    * Sends an APDU command.
    * @param {string} apdu - APDU hex string
+   * @param {boolean} [manual=true] - Whether this is a manually sent APDU
+   * @param {string} [payloadFormat='auto'] - Payload format (compact, expanded_definite, expanded_indefinite)
    */
-  async sendApdu(apdu) {
+  async sendApdu(apdu, manual = true, payloadFormat = 'auto') {
     const sessionId = state.get('activeSessionId');
 
     if (!sessionId) {
@@ -905,7 +1085,7 @@ class DashboardApp {
     }
 
     try {
-      await api.sendApdu(sessionId, { data: apdu });
+      await api.sendApdu(sessionId, { data: apdu, manual, payloadFormat });
       this.components.toast.success('Command sent');
     } catch (error) {
       console.error('Failed to send APDU:', error);

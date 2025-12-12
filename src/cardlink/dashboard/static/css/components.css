@@ -101,6 +101,17 @@
   height: 1.25rem;
 }
 
+/* Active state for toggle buttons (e.g., auto-scroll) */
+.btn--icon[aria-pressed="true"] {
+  color: var(--accent-primary);
+  background-color: var(--accent-primary-alpha);
+}
+
+.btn--icon[aria-pressed="false"] {
+  color: var(--text-tertiary);
+  opacity: 0.6;
+}
+
 /* =============================================================================
    Card Component
    ============================================================================= */
@@ -558,6 +569,15 @@
   background-color: var(--apdu-highlight);
 }
 
+.apdu-entry--manual {
+  background-color: var(--color-info-50);
+  border-left: 3px solid var(--color-info-500);
+}
+
+.apdu-entry--manual:hover {
+  background-color: var(--color-info-100);
+}
+
 .apdu-entry__time {
   color: var(--text-tertiary);
   font-size: var(--text-xs);
@@ -609,6 +629,57 @@
 
 .apdu-entry:hover .apdu-entry__actions {
   opacity: 1;
+}
+
+/* APDU Command Info Column */
+.apdu-entry__cmd-info {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-width: 120px;
+  max-width: 150px;
+}
+
+.apdu-entry__ins-name {
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 80px;
+}
+
+/* APDU Case Badge */
+.apdu-case-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 var(--space-1);
+  font-size: var(--text-xs);
+  font-weight: var(--font-semibold);
+  border-radius: var(--radius-xs);
+  letter-spacing: 0.5px;
+  min-width: 20px;
+}
+
+.apdu-case-badge--case1 {
+  background-color: var(--color-neutral-200);
+  color: var(--color-neutral-700);
+}
+
+.apdu-case-badge--case2 {
+  background-color: var(--color-info-100);
+  color: var(--color-info-700);
+}
+
+.apdu-case-badge--case3 {
+  background-color: var(--color-warning-100);
+  color: var(--color-warning-700);
+}
+
+.apdu-case-badge--case4 {
+  background-color: var(--color-success-100);
+  color: var(--color-success-700);
 }
 
 /* =============================================================================
@@ -688,13 +759,55 @@
   grid-column: span 2;
 }
 
+.command-builder__select {
+  width: 100%;
+  padding: var(--space-2) var(--space-3);
+  font-size: var(--text-sm);
+  color: var(--text-primary);
+  background-color: var(--bg-secondary);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12' fill='none' stroke='%2364748b' stroke-width='1.5'%3E%3Cpath d='M3 4.5l3 3 3-3'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right var(--space-3) center;
+  padding-right: var(--space-8);
+}
+
+.command-builder__select:focus {
+  outline: none;
+  border-color: var(--border-focus);
+  box-shadow: 0 0 0 3px var(--border-focus-ring);
+}
+
+.command-builder__row--options {
+  margin-top: var(--space-2);
+}
+
+.command-builder__field--format {
+  max-width: 280px;
+}
+
 .command-builder__preview {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
   padding: var(--space-3);
   font-family: var(--font-mono);
   font-size: var(--text-sm);
   background-color: var(--bg-tertiary);
   border-radius: var(--radius-md);
+  flex-wrap: wrap;
+}
+
+.command-builder__preview-hex {
   word-break: break-all;
+}
+
+.command-builder__preview-info {
+  color: var(--text-tertiary);
+  font-size: var(--text-xs);
 }
 
 .command-builder__actions {
@@ -2088,6 +2201,16 @@
   border-color: var(--border-secondary);
 }
 
+.comm-exchange--manual {
+  background-color: var(--color-info-50);
+  border-left: 3px solid var(--color-info-500);
+}
+
+.comm-exchange--manual:hover {
+  background-color: var(--color-info-100);
+  border-color: var(--border-secondary);
+}
+
 .comm-exchange:last-child {
   margin-bottom: 0;
 }
@@ -2405,6 +2528,19 @@
 
 .http-log__entry--response {
   border-left: 3px solid var(--color-primary-500);
+}
+
+.http-log__entry--manual {
+  background-color: var(--color-info-50);
+  border-left-color: var(--color-info-500);
+}
+
+.http-log__entry--manual .http-log__entry-header {
+  background-color: var(--color-info-100);
+}
+
+.http-log__entry--manual .http-log__entry-header:hover {
+  background-color: var(--color-info-200);
 }
 
 .http-log__entry-header {
@@ -2851,6 +2987,7 @@
 .custom-apdu__parsed-header {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   margin-bottom: var(--space-2);
   padding-bottom: var(--space-2);
   border-bottom: 1px solid var(--border-primary);
@@ -2860,6 +2997,10 @@
   font-size: var(--text-sm);
   font-weight: var(--font-semibold);
   color: var(--color-primary-600);
+}
+
+.custom-apdu__parsed-header .apdu-case-badge {
+  margin-left: var(--space-2);
 }
 
 .custom-apdu__parsed-grid {

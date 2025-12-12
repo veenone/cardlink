@@ -47,6 +47,11 @@ export function createHttpLog(elements) {
     entry.className = `http-log__entry http-log__entry--${isRequest ? 'request' : 'response'}`;
     entry.dataset.index = index;
 
+    // Check if manually sent APDU
+    if (apdu.metadata?.manual) {
+      entry.classList.add('http-log__entry--manual');
+    }
+
     // Determine what to display based on direction
     let headerContent = '';
     let bodyContent = '';

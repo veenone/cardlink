@@ -134,6 +134,12 @@ class Session:
     metadata: Dict[str, Any] = field(default_factory=dict)
     psk_identity: Optional[str] = None
     client_ip: Optional[str] = None
+    # Card identifiers per GP Amendment B / ETSI TS 102.226
+    # Extracted from X-Admin-From header URI formats
+    iccid: Optional[str] = None   # //se/iccid/<ICCID> - Card identification
+    eid: Optional[str] = None     # //se/eid/<EID> - eSIM identification
+    imei: Optional[str] = None    # //terminal/imei/<IMEI> - Device identification
+    seid: Optional[str] = None    # //se/seid/<SEID> - SE identification
     # Protocol details (GP SCP81 / ETSI TS 102.226)
     cipher_suite: Optional[str] = None
     tls_version: Optional[str] = None
@@ -153,6 +159,12 @@ class Session:
         if self.client_ip:
             metadata["client_ip"] = self.client_ip
 
+        # Get identifiers from explicit fields or metadata
+        iccid = self.iccid or self.metadata.get("iccid")
+        eid = self.eid or self.metadata.get("eid")
+        imei = self.imei or self.metadata.get("imei")
+        seid = self.seid or self.metadata.get("seid")
+
         return {
             "id": self.id,
             "name": self.name,
@@ -163,6 +175,11 @@ class Session:
             "metadata": metadata,
             "pskIdentity": self.psk_identity,
             "clientIp": self.client_ip,
+            # Card identifiers (per GP Amendment B / ETSI TS 102.226)
+            "iccid": iccid,
+            "eid": eid,
+            "imei": imei,
+            "seid": seid,
             # Protocol details
             "cipherSuite": self.cipher_suite,
             "tlsVersion": self.tls_version,
@@ -293,6 +310,10 @@ class DashboardState:
         name: str,
         psk_identity: Optional[str] = None,
         client_ip: Optional[str] = None,
+        iccid: Optional[str] = None,
+        eid: Optional[str] = None,
+        imei: Optional[str] = None,
+        seid: Optional[str] = None,
         cipher_suite: Optional[str] = None,
         tls_version: Optional[str] = None,
         handshake_duration_ms: Optional[float] = None,
@@ -303,8 +324,12 @@ class DashboardState:
 
         Args:
             name: Session display name.
-            psk_identity: PSK identity (typically ICCID) for the connection.
+            psk_identity: PSK identity for the connection.
             client_ip: Client IP address.
+            iccid: ICCID from X-Admin-From: //se/iccid/<ICCID>
+            eid: EID from X-Admin-From: //se/eid/<EID>
+            imei: IMEI from X-Admin-From: //terminal/imei/<IMEI>
+            seid: SEID from X-Admin-From: //se/seid/<SEID>
             cipher_suite: TLS cipher suite (e.g., 'PSK-AES128-CBC-SHA256').
             tls_version: TLS version (e.g., 'TLSv1.2').
             handshake_duration_ms: TLS handshake duration in milliseconds.
@@ -320,11 +345,25 @@ class DashboardState:
             if psk_identity and (not name or name.startswith("Session ")):
                 display_name = psk_identity
 
+            # Extract identifiers from metadata if not passed directly
+            if not iccid:
+                iccid = metadata.pop("iccid", None)
+            if not eid:
+                eid = metadata.pop("eid", None)
+            if not imei:
+                imei = metadata.pop("imei", None)
+            if not seid:
+                seid = metadata.pop("seid", None)
+
             session = Session(
                 id=str(uuid.uuid4()),
                 name=display_name,
                 psk_identity=psk_identity,
                 client_ip=client_ip,
+                iccid=iccid,
+                eid=eid,
+                imei=imei,
+                seid=seid,
                 cipher_suite=cipher_suite,
                 tls_version=tls_version,
                 handshake_duration_ms=handshake_duration_ms,
@@ -464,6 +503,9 @@ class WebSocketClient:
 
             self.writer.write(frame)
             await self.writer.drain()
+        except (ConnectionResetError, ConnectionAbortedError, BrokenPipeError, OSError) as e:
+            # Connection was closed by client - this is expected behavior
+            logger.debug("Connection closed for client %s: %s", self.id, e)
         except Exception as e:
             logger.debug("Failed to send to client %s: %s", self.id, e)
 
@@ -512,6 +554,42 @@ class DashboardServer:
             except Exception as e:
                 logger.warning("Failed to initialize Scripts API: %s", e)
 
+    def _setup_scripts_execute_callback(self) -> None:
+        """Set up the script execution callback.
+
+        This method configures the Scripts API to execute commands via the
+        AdminServer's HTTP handler. It handles the case where the handler
+        may not exist yet at setup time.
+        """
+        if not self._scripts_api:
+            return
+
+        admin_server = self._admin_server
+
+        def execute_commands(session_id: str, commands: list) -> None:
+            """Queue commands to AdminServer for execution.
+
+            Args:
+                session_id: Target session ID (PSK identity).
+                commands: List of APDU command bytes to execute.
+            """
+            if not admin_server:
+                logger.error("No AdminServer connected - cannot execute commands")
+                raise RuntimeError("AdminServer not connected")
+
+            # Check for handler at execution time
+            handler = getattr(admin_server, '_handler', None)
+            if handler:
+                handler.queue_commands(session_id, commands)
+                logger.debug("Queued %d commands for session %s via Scripts API",
+                            len(commands), session_id)
+            else:
+                logger.error("AdminServer handler not available for command execution")
+                raise RuntimeError("AdminServer handler not ready")
+
+        self._scripts_api.set_execute_callback(execute_commands)
+        logger.info("Scripts API execute callback connected to AdminServer")
+
     def set_admin_server(self, admin_server: Any) -> None:
         """Set the AdminServer instance for dashboard integration.
 
@@ -530,18 +608,8 @@ class DashboardServer:
         logger.info("Dashboard connected to AdminServer (events will be subscribed on start)")
 
         # Wire up the Scripts API execute callback to AdminServer's queue_commands
-        if self._scripts_api and hasattr(admin_server, '_handler'):
-            def execute_commands(session_id: str, commands: list) -> None:
-                """Queue commands to AdminServer for execution."""
-                if admin_server._handler:
-                    admin_server._handler.queue_commands(session_id, commands)
-                    logger.debug("Queued %d commands for session %s via Scripts API",
-                                len(commands), session_id)
-                else:
-                    logger.warning("AdminServer handler not available for command execution")
-
-            self._scripts_api.set_execute_callback(execute_commands)
-            logger.info("Scripts API execute callback connected to AdminServer")
+        # Note: The callback checks for handler at execution time, not setup time
+        self._setup_scripts_execute_callback()
 
     def _subscribe_to_admin_events(self) -> None:
         """Subscribe to AdminServer events. Called from start() after loop is ready."""
@@ -586,12 +654,24 @@ class DashboardServer:
             else:
                 logger.debug("Dashboard event loop not available for APDU sent event")
 
+        def on_session_updated(event):
+            # Use thread-safe scheduling since this may be called from AdminServer thread
+            if self._loop and self._loop.is_running():
+                logger.debug("Scheduling session_updated event for dashboard: %s", event.get('psk_identity', 'unknown'))
+                asyncio.run_coroutine_threadsafe(
+                    self._handle_server_session_updated(event),
+                    self._loop
+                )
+            else:
+                logger.debug("Dashboard event loop not available for session_updated event")
+
         # Subscribe to correct server event names
         emitter.subscribe('handshake_completed', on_handshake_completed)
         emitter.subscribe('apdu_received', on_apdu_received)
         emitter.subscribe('apdu_sent', on_apdu_sent)
-        self._admin_server_event_handler = (on_handshake_completed, on_apdu_received, on_apdu_sent)
-        logger.info("Subscribed to AdminServer events: handshake_completed, apdu_received, apdu_sent")
+        emitter.subscribe('session_updated', on_session_updated)
+        self._admin_server_event_handler = (on_handshake_completed, on_apdu_received, on_apdu_sent, on_session_updated)
+        logger.info("Subscribed to AdminServer events: handshake_completed, apdu_received, apdu_sent, session_updated")
 
     @property
     def admin_server(self) -> Optional[Any]:
@@ -759,6 +839,66 @@ class DashboardServer:
         except Exception as e:
             logger.error("Error handling APDU sent event: %s", e)
 
+    async def _handle_server_session_updated(self, event: Dict[str, Any]) -> None:
+        """Handle session_updated event from AdminServer.
+
+        Event format from AdminServer (when X-Admin-From header is parsed):
+        {
+            'session_id': 'session-uuid',
+            'psk_identity': 'test_card',
+            'agent_id': '//se/iccid/8933102300001234567F',
+            'iccid': '8933102300001234567F',
+            'eid': '89049032123456789012345678901234',
+            'imei': '353456789012345',
+            'seid': None,
+        }
+
+        This event is emitted when the HTTP handler parses identifiers from
+        the X-Admin-From header, which happens after the TLS handshake.
+        """
+        try:
+            psk_identity = event.get('psk_identity', '')
+
+            # Look up the dashboard session by PSK identity
+            session = await self.state.get_session_by_psk_identity(psk_identity)
+            if not session:
+                logger.warning("No session found for PSK identity: %s", psk_identity)
+                return
+
+            # Extract identifiers from event
+            iccid = event.get('iccid')
+            eid = event.get('eid')
+            imei = event.get('imei')
+            seid = event.get('seid')
+
+            # Update session with identifiers
+            updates = {}
+            if iccid:
+                updates['iccid'] = iccid
+            if eid:
+                updates['eid'] = eid
+            if imei:
+                updates['imei'] = imei
+            if seid:
+                updates['seid'] = seid
+
+            if updates:
+                await self.state.update_session(session.id, **updates)
+                logger.info(
+                    "Updated session %s with identifiers: iccid=%s, eid=%s, imei=%s, seid=%s",
+                    session.id, iccid, eid, imei, seid
+                )
+
+                # Notify WebSocket clients of session update
+                updated_session = await self.state.get_session(session.id)
+                if updated_session:
+                    await self._broadcast('session_updated', {
+                        'session': updated_session.to_dict(),
+                    })
+
+        except Exception as e:
+            logger.error("Error handling session_updated event: %s", e)
+
     async def start(self) -> None:
         """Start the server."""
         # Store event loop reference for cross-thread event handling
@@ -911,11 +1051,18 @@ class DashboardServer:
             # Route request
             await self._route_request(method, path, headers, body, writer)
 
+        except (ConnectionResetError, ConnectionAbortedError, BrokenPipeError, OSError) as e:
+            # Connection was closed by client - this is expected behavior
+            logger.debug("Client connection closed: %s", e)
         except Exception as e:
             logger.error("Connection error: %s", e)
         finally:
-            writer.close()
-            await writer.wait_closed()
+            try:
+                writer.close()
+                await writer.wait_closed()
+            except (ConnectionResetError, ConnectionAbortedError, BrokenPipeError, OSError):
+                # Ignore errors when closing already-closed connection
+                pass
 
     async def _route_request(
         self,
@@ -1022,20 +1169,68 @@ class DashboardServer:
                 response = [a.to_dict() for a in apdus]
 
             elif method == "POST" and session_id:
-                apdu = await self.state.add_apdu(
-                    session_id=session_id,
-                    direction=data.get("direction", "command"),
-                    data=data.get("data", ""),
-                    sw=data.get("sw"),
-                    response_data=data.get("responseData"),
-                )
-                if apdu:
-                    response = apdu.to_dict()
-                    await self._broadcast("apdu", response)
-                    status = 201
+                apdu_hex = data.get("data", "")
+                is_manual = data.get("manual", False)  # Flag for manually sent APDUs
+                payload_format = data.get("payloadFormat", "auto")  # Payload format per ETSI TS 102.226
+
+                # Queue the command for execution via AdminServer if connected
+                if self._admin_server and apdu_hex:
+                    handler = getattr(self._admin_server, '_handler', None)
+                    if handler:
+                        try:
+                            # Convert hex string to bytes and queue
+                            apdu_bytes = bytes.fromhex(apdu_hex.replace(" ", ""))
+                            # Store manual flag in session for tracking
+                            if is_manual:
+                                if not hasattr(handler, '_manual_apdus'):
+                                    handler._manual_apdus = {}
+                                if session_id not in handler._manual_apdus:
+                                    handler._manual_apdus[session_id] = set()
+                                handler._manual_apdus[session_id].add(apdu_hex.upper().replace(" ", ""))
+                            handler.queue_commands(session_id, [apdu_bytes])
+                            logger.debug("Queued %sAPDU command for session %s: %s (format: %s)",
+                                        "manual " if is_manual else "", session_id, apdu_hex, payload_format)
+                            response = {"queued": True, "apdu": apdu_hex, "manual": is_manual, "payloadFormat": payload_format}
+                            status = 202  # Accepted
+                        except ValueError as e:
+                            status = 400
+                            response = {"error": f"Invalid APDU hex: {e}"}
+                    else:
+                        # AdminServer handler not ready - just log for now
+                        apdu = await self.state.add_apdu(
+                            session_id=session_id,
+                            direction=data.get("direction", "command"),
+                            data=apdu_hex,
+                            sw=data.get("sw"),
+                            response_data=data.get("responseData"),
+                            manual=is_manual,
+                            payload_format=payload_format,
+                        )
+                        if apdu:
+                            response = apdu.to_dict()
+                            await self._broadcast("apdu", response)
+                            status = 201
+                        else:
+                            status = 404
+                            response = {"error": "Session not found"}
                 else:
-                    status = 404
-                    response = {"error": "Session not found"}
+                    # No AdminServer - just log the APDU
+                    apdu = await self.state.add_apdu(
+                        session_id=session_id,
+                        direction=data.get("direction", "command"),
+                        data=apdu_hex,
+                        sw=data.get("sw"),
+                        response_data=data.get("responseData"),
+                        manual=is_manual,
+                        payload_format=payload_format,
+                    )
+                    if apdu:
+                        response = apdu.to_dict()
+                        await self._broadcast("apdu", response)
+                        status = 201
+                    else:
+                        status = 404
+                        response = {"error": "Session not found"}
 
             elif method == "DELETE" and session_id:
                 if await self.state.clear_apdus(session_id):
@@ -1298,8 +1493,12 @@ class DashboardServer:
             f"Sec-WebSocket-Accept: {accept}\r\n"
             "\r\n"
         )
-        writer.write(response.encode())
-        await writer.drain()
+        try:
+            writer.write(response.encode())
+            await writer.drain()
+        except (ConnectionResetError, ConnectionAbortedError, BrokenPipeError, OSError) as e:
+            logger.debug("WebSocket handshake failed - client disconnected: %s", e)
+            return
 
         # Create client
         client = WebSocketClient(writer)
@@ -1353,10 +1552,17 @@ class DashboardServer:
                 # Handle ping
                 elif opcode == 0x9:
                     # Send pong
-                    pong = bytes([0x8A, len(payload)]) + payload
-                    writer.write(pong)
-                    await writer.drain()
+                    try:
+                        pong = bytes([0x8A, len(payload)]) + payload
+                        writer.write(pong)
+                        await writer.drain()
+                    except (ConnectionResetError, ConnectionAbortedError, BrokenPipeError, OSError):
+                        # Client disconnected
+                        break
 
+        except (ConnectionResetError, ConnectionAbortedError, BrokenPipeError, OSError) as e:
+            # Connection was closed by client - this is expected behavior
+            logger.debug("WebSocket client disconnected: %s", e)
         except Exception as e:
             logger.debug("WebSocket error: %s", e)
         finally:

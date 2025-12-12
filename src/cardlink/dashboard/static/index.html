@@ -237,6 +237,11 @@
             <h2 class="view__title">Communication Log</h2>
             <div class="view__actions">
               <span id="comm-log-count" class="text-sm text-secondary">0 exchanges</span>
+              <button id="comm-auto-scroll-btn" class="btn btn--ghost btn--icon btn--sm" type="button" aria-label="Toggle auto-scroll" aria-pressed="true" title="Auto-scroll enabled">
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+                  <path d="M8 3v10M4 9l4 4 4-4"/>
+                </svg>
+              </button>
             </div>
           </div>
 
@@ -366,14 +371,14 @@
                 </div>
                 <div class="command-builder__field">
                   <label class="command-builder__label" for="cmd-le">
-                    Le
-                    <span class="help-icon" data-tooltip="Length expected - Max response bytes. 00 = up to 256 bytes." tabindex="0" aria-label="Help for Le">
+                    Le <span class="text-tertiary text-xs">(optional)</span>
+                    <span class="help-icon" data-tooltip="Length expected - Response bytes expected. Leave empty for no response. 00 = up to 256 bytes. Lc (data length) is calculated automatically." tabindex="0" aria-label="Help for Le">
                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/>
                       </svg>
                     </span>
                   </label>
-                  <input id="cmd-le" type="text" class="command-builder__input" maxlength="2" pattern="[0-9A-Fa-f]{0,2}" placeholder="00">
+                  <input id="cmd-le" type="text" class="command-builder__input" maxlength="2" pattern="[0-9A-Fa-f]{0,2}" placeholder="">
                 </div>
               </div>
 
@@ -387,6 +392,25 @@
                   </span>
                 </label>
                 <input id="cmd-data" type="text" class="command-builder__input command-builder__input--wide" pattern="[0-9A-Fa-f]*" placeholder="Optional data bytes">
+              </div>
+
+              <div class="command-builder__row command-builder__row--options">
+                <div class="command-builder__field command-builder__field--format">
+                  <label class="command-builder__label" for="cmd-payload-format">
+                    Payload Format
+                    <span class="help-icon" data-tooltip="APDU payload format per ETSI TS 102.226: Compact (Lc≤255), Expanded Definite (Lc>255), or Expanded Indefinite (streaming)" tabindex="0" aria-label="Help for Payload Format">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+                      </svg>
+                    </span>
+                  </label>
+                  <select id="cmd-payload-format" class="command-builder__select">
+                    <option value="auto">Auto (based on data length)</option>
+                    <option value="compact">Compact (Lc ≤ 255 bytes)</option>
+                    <option value="expanded_definite">Expanded Definite (Lc > 255 bytes)</option>
+                    <option value="expanded_indefinite">Expanded Indefinite (streaming)</option>
+                  </select>
+                </div>
               </div>
 
               <div class="command-builder__preview">
@@ -587,6 +611,10 @@
                       <span class="session-details__value session-details__value--mono" id="session-detail-psk-identity">-</span>
                     </div>
                     <div class="session-details__row">
+                      <span class="session-details__label">TLS Version</span>
+                      <span class="session-details__value session-details__value--mono" id="session-detail-tls-version">-</span>
+                    </div>
+                    <div class="session-details__row">
                       <span class="session-details__label">Cipher Suite</span>
                       <span class="session-details__value session-details__value--mono" id="session-detail-cipher">-</span>
                     </div>
@@ -638,16 +666,20 @@
                       <span class="session-details__value session-details__value--mono" id="session-detail-iccid">-</span>
                     </div>
                     <div class="session-details__row">
+                      <span class="session-details__label">EID</span>
+                      <span class="session-details__value session-details__value--mono" id="session-detail-eid">-</span>
+                    </div>
+                    <div class="session-details__row">
+                      <span class="session-details__label">IMEI</span>
+                      <span class="session-details__value session-details__value--mono" id="session-detail-imei">-</span>
+                    </div>
+                    <div class="session-details__row">
+                      <span class="session-details__label">SEID</span>
+                      <span class="session-details__value session-details__value--mono" id="session-detail-seid">-</span>
+                    </div>
+                    <div class="session-details__row">
                       <span class="session-details__label">TAR</span>
                       <span class="session-details__value session-details__value--mono" id="session-detail-tar">-</span>
-                    </div>
-                    <div class="session-details__row">
-                      <span class="session-details__label">GP Version</span>
-                      <span class="session-details__value" id="session-detail-gp-version">-</span>
-                    </div>
-                    <div class="session-details__row">
-                      <span class="session-details__label">SCP Version</span>
-                      <span class="session-details__value" id="session-detail-scp">-</span>
                     </div>
                   </div>
                 </div>

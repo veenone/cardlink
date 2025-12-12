@@ -20,6 +20,8 @@ export function createCommLog(options) {
 
   let exchanges = [];
   let currentSessionId = null;
+  let autoScroll = true;
+  let userScrolledUp = false;
 
   /**
    * Formats timestamp for display.
@@ -147,6 +149,11 @@ export function createCommLog(options) {
     el.className = 'comm-exchange';
     el.dataset.index = index;
 
+    // Check if manually sent APDU
+    if (command?.metadata?.manual) {
+      el.classList.add('comm-exchange--manual');
+    }
+
     // Calculate response time if both timestamps available
     let responseTime = '';
     if (command?.timestamp && response?.timestamp) {
@@ -261,6 +268,25 @@ export function createCommLog(options) {
   }
 
   /**
+   * Checks if container is scrolled to bottom.
+   * @param {number} threshold - Threshold in pixels
+   * @returns {boolean} True if at bottom
+   */
+  function isAtBottom(threshold = 50) {
+    const scrollHeight = container.scrollHeight;
+    const scrollTop = container.scrollTop;
+    const clientHeight = container.clientHeight;
+    return scrollHeight - scrollTop - clientHeight <= threshold;
+  }
+
+  /**
+   * Scrolls to bottom of container.
+   */
+  function scrollToBottom() {
+    container.scrollTop = container.scrollHeight;
+  }
+
+  /**
    * Renders all exchanges.
    */
   function render() {
@@ -282,6 +308,11 @@ export function createCommLog(options) {
       fragment.appendChild(createExchangeElement(exchange, index));
     });
     container.appendChild(fragment);
+
+    // Auto-scroll to bottom if enabled
+    if (autoScroll) {
+      scrollToBottom();
+    }
   }
 
   /**
@@ -326,16 +357,23 @@ export function createCommLog(options) {
 
     exchanges = groupIntoExchanges(sessionApdus);
     render();
-
-    // Scroll to bottom if auto-scroll enabled
-    if (state.get('ui.autoScroll')) {
-      container.scrollTop = container.scrollHeight;
-    }
   }
 
   // Subscribe to state changes
   state.subscribe('apdus', update);
   state.subscribe('activeSessionId', update);
+
+  // Add scroll listener to detect user scrolling
+  container.addEventListener('scroll', () => {
+    // If user scrolls up, disable auto-scroll
+    if (!isAtBottom(100)) {
+      userScrolledUp = true;
+      autoScroll = false;
+    } else if (userScrolledUp) {
+      // User scrolled back to bottom, but don't re-enable auto-scroll automatically
+      // Let them use the button to re-enable it
+    }
+  });
 
   // Initial render
   update();
@@ -360,5 +398,30 @@ export function createCommLog(options) {
     get exchanges() {
       return [...exchanges];
     },
+
+    /**
+     * Sets auto-scroll state.
+     * @param {boolean} enabled - Enable auto-scroll
+     */
+    setAutoScroll(enabled) {
+      autoScroll = enabled;
+      userScrolledUp = !enabled;
+      if (enabled) {
+        scrollToBottom();
+      }
+    },
+
+    /**
+     * Gets auto-scroll state.
+     * @returns {boolean} Auto-scroll enabled
+     */
+    isAutoScroll() {
+      return autoScroll;
+    },
+
+    /**
+     * Scrolls to bottom of log.
+     */
+    scrollToBottom,
   };
 }

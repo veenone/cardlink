@@ -5,8 +5,8 @@
  */
 
 import { state } from '../state.js';
-import { normalizeHex, isValidHex, padHex, formatHex } from '../utils/hex.js';
-import { buildCommand, INSTRUCTIONS } from '../utils/apdu.js';
+import { normalizeHex, isValidHex, padHex, formatHex, hexLength } from '../utils/hex.js';
+import { buildCommand, INSTRUCTIONS, getApduCase, APDU_CASES } from '../utils/apdu.js';
 import { TERMS, createHelpIcon } from '../utils/tooltip.js';
 
 /**
@@ -96,6 +96,7 @@ export function createCommandBuilder(elements) {
     p2: form.querySelector('#cmd-p2'),
     le: form.querySelector('#cmd-le'),
     data: form.querySelector('#cmd-data'),
+    payloadFormat: form.querySelector('#cmd-payload-format'),
   };
 
   const templateButtons = form.querySelectorAll('[data-template]');
@@ -113,6 +114,7 @@ export function createCommandBuilder(elements) {
       p2: normalizeHex(inputs.p2.value) || '00',
       le: inputs.le.value ? normalizeHex(inputs.le.value) : null,
       data: normalizeHex(inputs.data.value) || null,
+      payloadFormat: inputs.payloadFormat?.value || 'auto',
     };
   }
 
@@ -131,19 +133,65 @@ export function createCommandBuilder(elements) {
   }
 
   /**
+   * Determines the effective payload format based on data length and selection.
+   * @param {string} selectedFormat - Selected format ('auto', 'compact', 'expanded_definite', 'expanded_indefinite')
+   * @param {number} dataLength - Length of data in bytes
+   * @returns {string} Effective format
+   */
+  function getEffectivePayloadFormat(selectedFormat, dataLength) {
+    if (selectedFormat === 'auto') {
+      // Auto-detect based on data length per ETSI TS 102.226
+      return dataLength <= 255 ? 'compact' : 'expanded_definite';
+    }
+    return selectedFormat;
+  }
+
+  /**
+   * Gets payload format display name.
+   * @param {string} format - Format code
+   * @returns {string} Display name
+   */
+  function getPayloadFormatName(format) {
+    const names = {
+      'compact': 'Compact',
+      'expanded_definite': 'Expanded Definite',
+      'expanded_indefinite': 'Expanded Indefinite',
+    };
+    return names[format] || format;
+  }
+
+  /**
    * Updates the command preview.
    */
   function updatePreview() {
     const values = getValues();
+    const leValue = values.le ? parseInt(values.le, 16) : undefined;
     const apdu = buildCommand({
       cla: values.cla,
       ins: values.ins,
       p1: values.p1,
       p2: values.p2,
       data: values.data,
-      le: values.le ? parseInt(values.le, 16) : undefined,
+      le: leValue,
     });
-    preview.textContent = formatHex(apdu);
+
+    // Calculate APDU case
+    const hasData = values.data && values.data.length > 0;
+    const hasLe = leValue !== undefined;
+    const apduCase = getApduCase(hasData, hasLe);
+    const caseInfo = APDU_CASES[apduCase];
+    const lc = hasData ? hexLength(values.data) : 0;
+
+    // Get effective payload format
+    const effectiveFormat = getEffectivePayloadFormat(values.payloadFormat, lc);
+    const formatName = getPayloadFormatName(effectiveFormat);
+
+    // Build preview HTML with case badge and format info
+    preview.innerHTML = `
+      <span class="apdu-case-badge apdu-case-badge--case${apduCase}" title="${caseInfo.description}">Case ${apduCase}</span>
+      <span class="command-builder__preview-hex">${formatHex(apdu)}</span>
+      ${hasData ? `<span class="command-builder__preview-info">(Lc=${lc}, ${formatName})</span>` : ''}
+    `;
   }
 
   /**
@@ -240,7 +288,13 @@ export function createCommandBuilder(elements) {
       le: values.le ? parseInt(values.le, 16) : undefined,
     });
 
-    window.dispatchEvent(new CustomEvent('apdu-send', { detail: { apdu } }));
+    // Get effective payload format
+    const lc = values.data ? hexLength(values.data) : 0;
+    const payloadFormat = getEffectivePayloadFormat(values.payloadFormat, lc);
+
+    window.dispatchEvent(new CustomEvent('apdu-send', {
+      detail: { apdu, payloadFormat }
+    }));
   }
 
   /**
@@ -261,14 +315,17 @@ export function createCommandBuilder(elements) {
     }
   }
 
-  // Set up event listeners
-  Object.values(inputs).forEach(input => {
+  // Set up event listeners for hex inputs
+  const hexInputs = [inputs.cla, inputs.ins, inputs.p1, inputs.p2, inputs.le, inputs.data];
+  hexInputs.forEach(input => {
+    if (!input) return;
+
     input.addEventListener('input', () => {
       validateInput(input);
       updatePreview();
     });
 
-    // Auto-uppercase for hex inputs
+    // Auto-uppercase for hex inputs (except data which can be longer)
     if (input.id !== 'cmd-data') {
       input.addEventListener('blur', () => {
         if (input.value) {
@@ -277,6 +334,11 @@ export function createCommandBuilder(elements) {
       });
     }
   });
+
+  // Payload format selector
+  if (inputs.payloadFormat) {
+    inputs.payloadFormat.addEventListener('change', updatePreview);
+  }
 
   // Template buttons
   templateButtons.forEach(btn => {
@@ -326,11 +388,11 @@ export function createCommandBuilder(elements) {
 
     /**
      * Gets the built APDU command.
-     * @returns {string} APDU hex string
+     * @returns {Object} Object with apdu hex string and payloadFormat
      */
     getApdu() {
       const values = getValues();
-      return buildCommand({
+      const apdu = buildCommand({
         cla: values.cla,
         ins: values.ins,
         p1: values.p1,
@@ -338,6 +400,9 @@ export function createCommandBuilder(elements) {
         data: values.data,
         le: values.le ? parseInt(values.le, 16) : undefined,
       });
+      const lc = values.data ? hexLength(values.data) : 0;
+      const payloadFormat = getEffectivePayloadFormat(values.payloadFormat, lc);
+      return { apdu, payloadFormat };
     },
 
     /**
